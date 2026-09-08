@@ -1,0 +1,10 @@
+# Local-only working docs. These repos ship open source; the design record and
+# the build queue are internal and stay out of a public history.
+ARCHITECTURE.md
+OUTLINE.md
+
+# Per-vault plugin settings, written by Obsidian at runtime.
+data.json
+
+node_modules/
+.DS_Store

@@ -1,0 +1,10 @@
+{
+  "id": "library-shelf",
+  "name": "Library Shelf",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "A cover-grid library for books and films. Entries live as rows in a ledger note — no file per title unless it earns one.",
+  "author": "Toyoco.",
+  "authorUrl": "https://github.com/toya-co",
+  "isDesktopOnly": false
+}

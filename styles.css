@@ -1,0 +1,258 @@
+/* Forest vars with core fallbacks, so the shelf survives a theme swap. */
+.lib-shelf {
+  --lib-cover-w: 108px;
+  --lib-gap: 18px;
+  --lib-radius: 4px;
+  --lib-accent: var(--ax1, var(--text-accent));
+  --lib-fg: var(--tx1, var(--text-normal));
+  --lib-fg-dim: var(--tx3, var(--text-muted));
+  --lib-surface: var(--bg3, var(--background-secondary));
+  margin: 0.5em 0 1.5em;
+}
+
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--lib-cover-w), 1fr));
+  gap: var(--lib-gap);
+  align-items: start;
+}
+
+.lib-total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45em;
+  margin-bottom: 0.9em;
+}
+.lib-total-count {
+  font-size: 1.9em;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--lib-accent);
+  font-variant-numeric: tabular-nums;
+}
+.lib-total-label {
+  font-size: 0.8em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lib-fg-dim);
+}
+
+.lib-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  margin: 1.6em 0 0.8em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--divider-color, var(--ui1));
+}
+.lib-group-head:first-child {
+  margin-top: 0;
+}
+/* the total takes the first-child slot, so re-tighten the head beneath it */
+.lib-total + .lib-group-head {
+  margin-top: 0;
+}
+.lib-group-name {
+  font-size: 0.95em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lib-accent);
+}
+.lib-group-count {
+  font-size: 0.75em;
+  color: var(--lib-fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.lib-item {
+  min-width: 0;
+}
+
+.lib-art {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--lib-radius);
+  overflow: hidden;
+  background: var(--lib-surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.28);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.lib-art.is-linked {
+  cursor: pointer;
+}
+.lib-item:hover .lib-art {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.34);
+}
+.lib-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* No cover is a designed state, not a broken one. */
+.lib-art.is-blank {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.3em;
+  padding: 0.7em 0.6em;
+  border: 1px solid var(--lib-accent);
+  background: linear-gradient(160deg, var(--lib-surface), var(--bg2, var(--background-primary)));
+}
+.lib-blank-title {
+  font-size: 0.78em;
+  line-height: 1.25;
+  font-weight: 600;
+  color: var(--lib-fg);
+}
+.lib-blank-by {
+  font-size: 0.68em;
+  color: var(--lib-fg-dim);
+}
+
+.lib-rating {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  min-width: 1.35em;
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  background: var(--lib-accent);
+  color: var(--bg1, var(--background-primary));
+  font-size: 0.68em;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* Marks the rows that graduated into real notes. */
+.lib-hasnote {
+  position: absolute;
+  bottom: 5px;
+  left: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ax2, var(--text-accent));
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.35);
+}
+
+.lib-item[data-status="wishlist"] .lib-art {
+  opacity: 0.55;
+}
+.lib-item[data-status="wishlist"]:hover .lib-art {
+  opacity: 1;
+}
+.lib-item[data-status="abandoned"] .lib-art {
+  filter: grayscale(0.85);
+}
+.lib-item[data-status="active"] .lib-art {
+  outline: 2px solid var(--lib-accent);
+  outline-offset: 1px;
+}
+
+.lib-meta {
+  margin-top: 0.45em;
+}
+.lib-title {
+  font-size: 0.78em;
+  line-height: 1.3;
+  color: var(--lib-fg);
+  overflow-wrap: break-word;
+}
+.lib-title a.internal-link {
+  color: var(--lib-fg);
+  text-decoration: none;
+}
+.lib-title a.internal-link:hover {
+  color: var(--lib-accent);
+  text-decoration: underline;
+}
+.lib-by {
+  margin-top: 0.15em;
+  font-size: 0.7em;
+  line-height: 1.25;
+  color: var(--lib-fg-dim);
+}
+
+/* ---------- table layout ---------- */
+
+.lib-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+.lib-table th {
+  text-align: left;
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid var(--divider-color, var(--ui1));
+  color: var(--lib-accent);
+  font-size: 0.85em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.lib-table td {
+  padding: 0.5em 0.6em;
+  border-bottom: 1px solid var(--divider-color, var(--ui1));
+  vertical-align: middle;
+}
+.lib-table tr[data-status="abandoned"] td {
+  opacity: 0.6;
+}
+.lib-td-cover {
+  width: 52px;
+}
+.lib-td-rating,
+.lib-td-year {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lib-thumb {
+  width: 44px;
+  border-radius: 2px;
+  display: block;
+}
+
+/* ---------- add-entry modal ---------- */
+
+.lib-add-modal .lib-results {
+  margin-top: 0.8em;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.lib-results-note {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  padding: 0.4em 0;
+}
+.lib-result {
+  display: flex;
+  gap: 0.7em;
+  align-items: center;
+  padding: 0.45em 0.5em;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.lib-result:hover {
+  background: var(--background-modifier-hover);
+}
+.lib-result-title {
+  font-weight: 600;
+  line-height: 1.25;
+}
+.lib-result-sub {
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
+.lib-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.lib-error {
+  color: var(--text-error);
+  font-size: 0.88em;
+  padding: 0.3em 0;
+}
