@@ -12,7 +12,7 @@ note when you actually have something to write about it.
 Files buy you links; rows buy you low friction. You get both, applied where each
 is worth paying for.
 
-![Library Shelf rendering a shelf of books and films in Obsidian](./images/library-shelf.png)
+![Library Shelf rendering a shelf of books and films in Obsidian](./images/libraryshelf.png)
 
 ## The ledger
 
