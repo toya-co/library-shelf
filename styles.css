@@ -7,28 +7,82 @@
   --lib-fg: var(--tx1, var(--text-normal));
   --lib-fg-dim: var(--tx3, var(--text-muted));
   --lib-surface: var(--bg3, var(--background-secondary));
+  --lib-plinth: var(--ax3, var(--text-muted));
+  --lib-paper: var(--mono0, #e8e2d2);
+  --lib-book-gap: 12px;
+  --lib-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   margin: 0.5em 0 1.5em;
 }
 
+/* Fixed columns, not minmax(1fr): the plinth needs exact geometry, and books
+   on a real shelf don't stretch to fill the row — a ragged right edge is right. */
 .lib-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--lib-cover-w), 1fr));
-  gap: var(--lib-gap);
+  grid-template-columns: repeat(auto-fill, calc(var(--lib-cover-w) + var(--lib-book-gap)));
+  justify-content: start;
+  column-gap: 0;
+  row-gap: 24px;
   align-items: start;
+}
+
+/* A fixed-height well the cover stands in, bottom-aligned. Its border is the
+   shelf board, and because the box spans the whole column including the gap,
+   neighbouring boards abut into one continuous line. */
+.lib-shelfbox {
+  height: calc(var(--lib-cover-w) * 1.62);
+  padding-right: var(--lib-book-gap);
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 3px solid var(--lib-plinth);
 }
 
 .lib-total {
   display: flex;
   align-items: baseline;
   gap: 0.45em;
-  margin-bottom: 0.9em;
+  margin-bottom: 0.35em;
+}
+
+/* A frontispiece row — the counts already exist in the data, and showing them
+   gives the top of the page something to sit on. */
+.lib-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4em;
+  padding-bottom: 0.9em;
+  margin-bottom: 1.1em;
+  border-bottom: 1px solid var(--divider-color, var(--ui1));
+}
+.lib-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+}
+.lib-stat-n {
+  font-family: var(--lib-display);
+  font-size: 1.05em;
+  color: var(--lib-fg);
+  font-variant-numeric: oldstyle-nums tabular-nums;
+}
+.lib-stat-label {
+  font-size: 0.72em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--lib-fg-dim);
+}
+.lib-stat[data-status="active"] .lib-stat-n {
+  color: var(--lib-accent);
+}
+.lib-stat[data-status="abandoned"] .lib-stat-n {
+  color: var(--lib-fg-dim);
 }
 .lib-total-count {
-  font-size: 1.9em;
-  font-weight: 700;
+  font-family: var(--lib-display);
+  font-size: 2em;
+  font-weight: 500;
   line-height: 1;
   color: var(--lib-accent);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: oldstyle-nums tabular-nums;
 }
 .lib-total-label {
   font-size: 0.8em;
@@ -39,30 +93,59 @@
 
 .lib-group-head {
   display: flex;
-  align-items: baseline;
-  gap: 0.6em;
+  align-items: center;
+  gap: 0.5em;
   margin: 1.6em 0 0.8em;
   padding-bottom: 0.3em;
   border-bottom: 1px solid var(--divider-color, var(--ui1));
+  cursor: pointer;
+  user-select: none;
 }
-.lib-group-head:first-child {
+.lib-group:first-child .lib-group-head {
   margin-top: 0;
 }
-/* the total takes the first-child slot, so re-tighten the head beneath it */
-.lib-total + .lib-group-head {
+/* the total or stats row takes the first-child slot, so re-tighten the head */
+.lib-total + .lib-group .lib-group-head,
+.lib-stats + .lib-group .lib-group-head {
   margin-top: 0;
 }
+.lib-group-head:hover .lib-group-name {
+  text-decoration: underline;
+}
+
+.lib-group-chevron {
+  display: inline-flex;
+  align-items: center;
+  color: var(--lib-accent);
+  transition: transform 120ms ease;
+}
+.lib-group-chevron .svg-icon {
+  width: 0.95em;
+  height: 0.95em;
+}
+.lib-group.is-collapsed .lib-group-chevron {
+  transform: rotate(-90deg);
+}
+.lib-group.is-collapsed .lib-group-body {
+  display: none;
+}
+/* a collapsed group is just a rule with a label — keep them tight together */
+.lib-group.is-collapsed .lib-group-head {
+  margin-bottom: 0.35em;
+}
+/* A catalogue sets its shelf names in a display serif, not app-chrome caps. */
 .lib-group-name {
-  font-size: 0.95em;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-family: var(--lib-display);
+  font-size: 1.16em;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   color: var(--lib-accent);
 }
 .lib-group-count {
-  font-size: 0.75em;
+  font-family: var(--lib-display);
+  font-size: 0.86em;
   color: var(--lib-fg-dim);
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: oldstyle-nums tabular-nums;
 }
 
 .lib-item {
@@ -71,19 +154,37 @@
 
 .lib-art {
   position: relative;
-  aspect-ratio: 2 / 3;
-  border-radius: var(--lib-radius);
+  width: 100%;
+  height: calc(var(--lib-cover-w) * var(--lib-ratio, 1.5));
+  border-radius: 1px var(--lib-radius) var(--lib-radius) 1px;
   overflow: hidden;
   background: var(--lib-surface);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.28);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.28), inset 0 -2px 0 rgb(0 0 0 / 0.22);
   transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+/* The page block. A cover with a visible fore-edge reads as an object rather
+   than a picture — this is most of what sells the shelf. */
+.lib-art::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 5px;
+  border-left: 1px solid rgb(0 0 0 / 0.22);
+  background: repeating-linear-gradient(
+      90deg,
+      rgb(0 0 0 / 0.13) 0 1px,
+      transparent 1px 3px
+    ),
+    var(--lib-paper);
+  pointer-events: none;
 }
 .lib-art.is-linked {
   cursor: pointer;
 }
 .lib-item:hover .lib-art {
-  transform: translateY(-3px);
-  box-shadow: 0 6px 14px rgb(0 0 0 / 0.34);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 12px rgb(0 0 0 / 0.32), inset 0 -2px 0 rgb(0 0 0 / 0.22);
 }
 .lib-art img {
   width: 100%;
@@ -116,7 +217,7 @@
 .lib-rating {
   position: absolute;
   top: 5px;
-  right: 5px;
+  right: 9px;
   min-width: 1.35em;
   padding: 0.1em 0.3em;
   border-radius: 3px;
@@ -153,14 +254,23 @@
   outline-offset: 1px;
 }
 
+/* Fixed height, title clamped to two lines: without it a long title pushes its
+   neighbours' baselines down and the row stops reading as one shelf. */
 .lib-meta {
-  margin-top: 0.45em;
+  margin-top: 0.5em;
+  padding-right: var(--lib-book-gap);
+  height: 3.4em;
+  overflow: hidden;
 }
 .lib-title {
   font-size: 0.78em;
   line-height: 1.3;
   color: var(--lib-fg);
   overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .lib-title a.internal-link {
   color: var(--lib-fg);
@@ -175,6 +285,9 @@
   font-size: 0.7em;
   line-height: 1.25;
   color: var(--lib-fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- table layout ---------- */

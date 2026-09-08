@@ -12,6 +12,8 @@ note when you actually have something to write about it.
 Files buy you links; rows buy you low friction. You get both, applied where each
 is worth paying for.
 
+![Library Shelf rendering a shelf of books and films in Obsidian](./images/library-shelf.png)
+
 ## The ledger
 
 A ledger is any note holding a fenced `json` or `yaml` block shaped
@@ -94,6 +96,7 @@ With no `from`, the block reads the note it's in.
 | `layout` | `grid` (default) or `table` |
 | `columns` | Table columns. Default: `cover, title, author, year, rating` |
 | `total` | Count above the shelf. `true` for a bare number, or a label like `books` |
+| `stats` | With `total`, adds a breakdown by status and an average rating |
 | `empty` | Text shown when nothing matches |
 
 Status drives appearance as well as filtering: `active` gets an accent outline,
@@ -102,6 +105,36 @@ every open shelf that reads it.
 
 `total` counts everything `where` matched, **before** `limit` trims the display —
 a number that shrinks when you cap the grid isn't a total.
+
+**Group headers fold.** Click one to collapse its shelf. The state is keyed by
+note and group name and kept in the plugin's data, so it survives a re-render
+and a reload rather than springing back open every time a ledger changes.
+
+## Appearance
+
+Covers stand on a shelf board rather than floating: each sits in a fixed-height
+well whose bottom border is the plinth, and neighbouring wells abut into one
+continuous line.
+
+`size` is a **target, not a literal**. Columns must be a fixed width for the
+plinth to land at an exact height, which would otherwise leave a gutter down the
+right — so the width is solved on render to divide the container evenly, and
+re-solved by a `ResizeObserver` when the pane changes. The board runs edge to
+edge at any width.
+
+Trim height varies per title, **hashed from the title rather than randomised** —
+random heights would reshuffle on every repaint and make the shelf twitch every
+time you edit a ledger. A fore-edge strip down the right of each cover is what
+makes it read as an object rather than a picture.
+
+Four CSS variables are the tuning knobs, settable on `.lib-shelf` in a snippet:
+
+| Variable | |
+|---|---|
+| `--lib-plinth` | Shelf board colour. Defaults to the theme's third accent |
+| `--lib-paper` | Fore-edge colour |
+| `--lib-book-gap` | Space between books |
+| `--lib-display` | Serif face for shelf names and counts |
 
 ## Covers
 

@@ -11,14 +11,16 @@ const {
   stringifyYaml,
   requestUrl,
   debounce,
+  setIcon,
 } = require("obsidian");
 
 const DEFAULT_SETTINGS = {
-  coverWidth: 108,
+  coverWidth: 132,
   layout: "grid",
   deriveCovers: true,
   ledgerFolder: "Library",
   tmdbApiKey: "",
+  collapsed: {},
 };
 
 const DEFAULT_COLUMNS = ["cover", "title", "author", "year", "rating"];
@@ -124,6 +126,16 @@ function watchCover(img, onMiss) {
   if (img.complete && img.naturalWidth) check();
 }
 
+/* Books aren't all one height, and a ruler-straight top line is the main thing
+   that makes a cover grid read as thumbnails rather than a shelf. The variance
+   is hashed from the title, never random — Math.random() would reshuffle every
+   height on each modify-event repaint and make the shelf twitch. */
+function trimRatio(title) {
+  let h = 0;
+  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) >>> 0;
+  return (1.38 + (h % 25) / 100).toFixed(2);
+}
+
 function creatorOf(entry) {
   return entry.author ?? entry.director ?? null;
 }
@@ -174,6 +186,10 @@ class ShelfChild extends MarkdownRenderChild {
 
   onunload() {
     this.plugin.shelves.delete(this);
+    if (this.resizeObs) {
+      this.resizeObs.disconnect();
+      this.resizeObs = null;
+    }
   }
 
   watches(path) {
@@ -200,8 +216,24 @@ class ShelfChild extends MarkdownRenderChild {
     }
 
     const root = el.createDiv({ cls: "lib-shelf" });
-    const width = opts.size ? Number(opts.size) : settings.coverWidth;
-    root.style.setProperty("--lib-cover-w", width + "px");
+
+    /* `size` is a target, not a literal. Columns are fixed-width so the plinth
+       lands at an exact height, which means a leftover gutter unless the width
+       is solved to divide the container evenly — so solve it, and re-solve when
+       the pane resizes. */
+    const target = opts.size ? Number(opts.size) : settings.coverWidth;
+    const gap = 12;
+    const fit = () => {
+      const avail = root.clientWidth;
+      if (!avail) return;
+      const cols = Math.max(1, Math.round(avail / (target + gap)));
+      root.style.setProperty("--lib-cover-w", Math.floor(avail / cols) - gap + "px");
+    };
+    root.style.setProperty("--lib-cover-w", target + "px");
+    fit();
+    if (this.resizeObs) this.resizeObs.disconnect();
+    this.resizeObs = new ResizeObserver(fit);
+    this.resizeObs.observe(root);
 
     if (missing.length) {
       root.createDiv({ cls: "lib-error", text: "Ledger not found: " + missing.join(", ") });
@@ -224,6 +256,28 @@ class ShelfChild extends MarkdownRenderChild {
         cls: "lib-total-label",
         text: typeof opts.total === "string" ? opts.total : matched.length === 1 ? "entry" : "entries",
       });
+
+      if (opts.stats) {
+        const counts = new Map();
+        for (const it of matched) {
+          if (it.status) counts.set(it.status, (counts.get(it.status) ?? 0) + 1);
+        }
+        const row = root.createDiv({ cls: "lib-stats" });
+        for (const st of STATUSES) {
+          if (!counts.has(st)) continue;
+          const cell = row.createDiv({ cls: "lib-stat" });
+          cell.dataset.status = st;
+          cell.createSpan({ cls: "lib-stat-n", text: String(counts.get(st)) });
+          cell.createSpan({ cls: "lib-stat-label", text: st });
+        }
+        const rated = matched.filter((it) => typeof it.rating === "number");
+        if (rated.length) {
+          const avg = rated.reduce((a, it) => a + it.rating, 0) / rated.length;
+          const cell = row.createDiv({ cls: "lib-stat" });
+          cell.createSpan({ cls: "lib-stat-n", text: avg.toFixed(1) });
+          cell.createSpan({ cls: "lib-stat-label", text: "avg rating" });
+        }
+      }
     }
 
     const layout = opts.layout ?? settings.layout;
@@ -238,10 +292,27 @@ class ShelfChild extends MarkdownRenderChild {
       }
       const ordered = [...groups].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
       for (const [name, list] of ordered) {
-        const head = root.createDiv({ cls: "lib-group-head" });
+        const wrap = root.createDiv({ cls: "lib-group" });
+        const head = wrap.createDiv({ cls: "lib-group-head" });
+        const chevron = head.createSpan({ cls: "lib-group-chevron" });
+        setIcon(chevron, "chevron-down");
         head.createSpan({ cls: "lib-group-name", text: String(name) });
         head.createSpan({ cls: "lib-group-count", text: String(list.length) });
-        draw(root, list);
+        const body = wrap.createDiv({ cls: "lib-group-body" });
+        draw(body, list);
+
+        /* Collapse state is keyed by note + group name and kept in plugin data,
+           so it survives both a re-render and a reload. */
+        const key = this.sourcePath + "::" + String(name);
+        let shut = !!this.plugin.settings.collapsed[key];
+        wrap.toggleClass("is-collapsed", shut);
+        head.addEventListener("click", () => {
+          shut = !shut;
+          wrap.toggleClass("is-collapsed", shut);
+          if (shut) this.plugin.settings.collapsed[key] = true;
+          else delete this.plugin.settings.collapsed[key];
+          this.plugin.saveSettings();
+        });
       }
     } else {
       draw(root, items);
@@ -256,7 +327,11 @@ class ShelfChild extends MarkdownRenderChild {
   tile(parent, entry) {
     const card = parent.createDiv({ cls: "lib-item" });
     if (entry.status) card.dataset.status = entry.status;
-    const art = card.createDiv({ cls: "lib-art" });
+    /* the shelf box is a fixed-height well the cover stands on; its bottom
+       border is the plinth, and adjacent boxes abut to form one board */
+    const shelfBox = card.createDiv({ cls: "lib-shelfbox" });
+    const art = shelfBox.createDiv({ cls: "lib-art" });
+    art.style.setProperty("--lib-ratio", trimRatio(entry.title ?? ""));
     const by = creatorOf(entry);
 
     const blank = () => {
@@ -660,6 +735,9 @@ module.exports = class LibraryShelfPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    if (!this.settings.collapsed || typeof this.settings.collapsed !== "object") {
+      this.settings.collapsed = {};
+    }
   }
 
   async saveSettings() {
