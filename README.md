@@ -12,18 +12,6 @@ note when you actually have something to write about it.
 Files buy you links; rows buy you low friction. You get both, applied where each
 is worth paying for.
 
-## Install
-
-No build step. Copy `main.js`, `manifest.json` and `styles.css` into:
-
-```
-<vault>/.obsidian/plugins/library-shelf/
-```
-
-Then Settings → Community plugins → refresh → enable **Library Shelf**.
-
-Requires Obsidian 1.4.0+. No other plugins — Dataview is not needed.
-
 ## The ledger
 
 A ledger is any note holding a fenced `json` or `yaml` block shaped
@@ -224,22 +212,6 @@ plugin folder.
 `main.js` requires `obsidian` at load, so testing outside the app means stubbing
 it. The parser, query layer, cover resolution and append round-trip are all
 covered that way, with recorded output.
-
-## Gotchas
-
-- **Plugin code doesn't hot-reload.** Toggle the plugin off and on to load a
-  change. pjeby's [Hot Reload](https://github.com/pjeby/hot-reload) removes that
-  step — this repo ships the `.hotreload` file it looks for.
-- **The data block must parse.** A malformed json or yaml block is skipped
-  silently and its entries just don't appear. If a shelf is emptier than
-  expected, check the block parses before checking anything else.
-- **Only the first `library` block in a note is written to.** Reading picks up
-  every one of them; `Add to library` appends to the first.
-- **A cover that fails is normal.** Roughly half of real ISBNs miss on Open
-  Library, and Amazon returns a blank 1x1 rather than an error. Both render the
-  fallback card. See Covers.
-- **`from:` paths are vault-relative**, with or without `.md`. A wrong path
-  renders `Ledger not found: <path>` rather than failing quietly.
 
 ## Licence
 
