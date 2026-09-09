@@ -54,7 +54,7 @@ entry is appended to the ledger's data block in whatever format that block
 already uses. "Don't look up" adds a bare title.
 
 >**Books** search Open Library. No API key.
-- **Films** search TMDB. Needs a free key in settings.
+> **Films** search TMDB. Needs a free key in settings.
 
 **1. Make a ledger.** New note `Library/Books.md`:
 
