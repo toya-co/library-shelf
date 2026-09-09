@@ -49,14 +49,16 @@ That's a complete entry. Only `title` is required, it will sort with any categor
 
 ## Adding entries
 
-Command palette → **Add to library**. Pick a ledger, search, click a result; the
-entry is appended to the ledger's data block in whatever format that block
-already uses. "Don't look up" adds a bare title.
+<p align="center">
+  <img src="./images/librarycommand.png" width="70%" alt="The Add to library command in the Obsidian command palette" />
+  <br />
+  <em>Command palette → <strong>Add to library</strong>. Pick a ledger, search, click a result; the entry is appended to the ledger's data block in whatever format that block already uses. "Don't look up" adds a bare title.</em>
+</p>
 
 >**Books** search Open Library. No API key.
 > **Films** search TMDB. Needs a free key in settings.
 
-**1. Make a ledger.** New note `Library/Books.md`:
+**1. Make Books and Movies note, seed with:
 
 ````markdown
 ```library-shelf
@@ -78,7 +80,7 @@ library:
     status: wishlist
 ```
 ````
-**2. Cross-ledger read.** New note `Library/Hub.md`:
+**2. Make Library hub note** and seed with:
 
 ````markdown
 ```library-shelf
