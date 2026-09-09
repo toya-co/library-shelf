@@ -1,8 +1,6 @@
 # Library Shelf
 
-Library shelves for books and movies. Entries live as rows in a ledger note — no file per title unless it earns one.
-
-Every title on the shelf lives in a ledger note at the bottom, with an optional note attached.
+Library shelves for books and movies. Entries live as rows in a ledger note with an optional note attached
 
 <p align="center">
   <img src="./images/libraryshelf.png" width="49%" alt="A library hub note: a total with a status breakdown, then covers grouped into shelves" />
