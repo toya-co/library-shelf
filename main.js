@@ -397,7 +397,6 @@ class ShelfChild extends MarkdownRenderChild {
 
     if (entry.rating != null) art.createDiv({ cls: "lib-rating", text: String(entry.rating) });
     if (entry.note) {
-      art.createDiv({ cls: "lib-hasnote", attr: { "aria-label": "Has notes" } });
       art.addClass("is-linked");
       art.addEventListener("click", (evt) => this.openNote(entry, evt));
     }
@@ -405,6 +404,10 @@ class ShelfChild extends MarkdownRenderChild {
     const meta = card.createDiv({ cls: "lib-meta" });
     const title = meta.createDiv({ cls: "lib-title" });
     if (entry.note) {
+      /* The indicator sits by the title rather than on the cover: a corner dot on
+         artwork reads as a rendering artefact, and on a light cover it disappears. */
+      const mark = title.createSpan({ cls: "lib-noteicon", attr: { "aria-label": "Has a note" } });
+      setIcon(mark, "notebook-pen");
       const a = title.createEl("a", {
         cls: "internal-link",
         text: entry.title ?? "Untitled",
@@ -448,6 +451,8 @@ class ShelfChild extends MarkdownRenderChild {
     }
     if (col === "title") {
       if (entry.note) {
+        const mark = td.createSpan({ cls: "lib-noteicon", attr: { "aria-label": "Has a note" } });
+        setIcon(mark, "notebook-pen");
         const a = td.createEl("a", {
           cls: "internal-link",
           text: entry.title ?? "Untitled",

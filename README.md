@@ -30,7 +30,7 @@ library:
     finished: [2024-08-19, 2026-01-04]
 ```
 ````
-That's a complete entry. Only `title` is required, it will sort with any category.
+Only `title` is required, it will sort with any category.
 
 ### Fields
 
@@ -58,11 +58,13 @@ That's a complete entry. Only `title` is required, it will sort with any categor
 >**Books** search Open Library. No API key.
 > **Films** search TMDB. Needs a free key in settings.
 
-**1. Make Books and Movies note, seed with:
+**1. Make a Books and Movies note, seed with:**
 
 ````markdown
 ```library-shelf
 group: shelf
+total: books
+stats: true
 ```
 
 ```yaml
@@ -80,70 +82,126 @@ library:
     status: wishlist
 ```
 ````
-**2. Make Library hub note** and seed with:
+>The Movies note is the same with `total: movies`. Drop `total` and `stats` and the
+>grid still renders, but you lose the count and the clickable status breakdown above it.
+
+**2. Make Library hub note and seed with:**
 
 ````markdown
+## Now
+
 ```library-shelf
-from: [Library/Books]
-where:
-  status: done
-layout: table
-```
-````
-**3. Lookup and append.** Command palette → **Add to library**. Ledger
-`Library/Books.md`, status `wishlist`, search `piranesi clarke`.
-
-**4. Promotion.** Create `Library/notes/Piranesi.md`, then add
-`note: Library/notes/Piranesi` to that entry.
-
-### Promoting a row to a note
-
-Add `note: Library/notes/Some Title` and create that file. The shelf marks the
-entry with a dot and links its title.
-
-**The note holds only your writing.** Author, cover, rating and status stay in
-the ledger, so there's exactly one source of truth and nothing to drift.
-
-## Rendering
-
-For the library overview note: 
-
-````markdown
-```library-shelf
-from: [Library/Books, Library/Films]
+from: [Library/Books, Library/Movies]
 where:
   status: active
-group: shelf
 size: 96
+empty: Nothing on the go.
+```
+````
+
+**3. Lookup and append.** Command palette → **Add to library**. Ledger
+`Library/Books.md`, status `wishlist`, search `your book`.
+
+### Giving media its own note
+
+**Create `Library/notes/`, then add `note: <path>` to the corresponding row in ledger:**
+
+The path is vault-relative and takes no `.md`. Once it's there the shelf puts a
+notebook icon before the title, links the title, and makes the cover clickable —
+all three open the note.
+
+## Library Hub View
+
+A hub is one note of `library-shelf` blocks reading across every ledger, each under
+its own heading. The whole thing, in one paste:
+
+````markdown
+## Now
+
+```library-shelf
+from: [Library/Books, Library/Movies]
+where:
+  status: active
+size: 96
+empty: Nothing on the go.
+```
+
+## Recently finished
+
+```library-shelf
+from: [Library/Books, Library/Movies]
+where:
+  status: done
+sort: -finished
+limit: 12
+size: 96
+```
+
+## Everything
+
+```library-shelf
+from: [Library/Books, Library/Movies]
+group: medium
+size: 88
+```
+
+## Wishlist
+
+```library-shelf
+from: [Library/Books, Library/Movies]
+where:
+  status: wishlist
+size: 88
+```
+
+## Abandoned
+
+```library-shelf
+from: [Library/Books, Library/Movies]
+where:
+  status: abandoned
+layout: table
+columns: [cover, title, author, year]
+empty: Nothing abandoned. Suspicious.
 ```
 ````
 
 With no `from`, the block reads the note it's in.
 
+**Which entries to show**
+
 | Option | |
 |---|---|
-| `from` | Ledger path, or a list of them. Defaults to the current note |
-| `where` | Field/value pairs. A list value matches any of them |
-| `group` | Field to group by. `medium` is the ledger's own name, stamped on load |
-| `sort` | Field name; `-` prefix for descending. Lists sort on their latest member |
-| `limit` | Cap the number shown |
-| `size` | Grid column width in px |
-| `layout` | `grid` (default) or `table` |
-| `columns` | Table columns. Default: `cover, title, author, year, rating` |
-| `total` | Count above the shelf. `true` for a bare number, or a label like `books` |
-| `stats` | With `total`, adds a breakdown by status and an average rating. Click a status to filter the shelf to it |
-| `empty` | Text shown when nothing matches |
+| `from` | Which ledgers to read — `from: [Library/Books, Library/Movies]` |
+| `where` | Only entries matching these fields — `where: {status: active}` |
+| `sort` | What order — `sort: -finished` puts the most recent first |
+| `limit` | Show at most this many |
 
-- Status drives appearance: `active` gets an accent outline,
-`wishlist` dims until hover, `abandoned` desaturates. Editing a ledger repaints
-every open shelf that reads it.
+**How to arrange them**
+
+| Option | |
+|---|---|
+| `group` | Split into sections, each with a heading and a count — `group: shelf`. Entries missing the field land under "Unshelved" |
+| `total` | The big number above the shelf — `total: books` prints "27 books" |
+| `stats` | The status breakdown under that number. Click one to filter the shelf. Needs `total` |
+
+**How it looks**
+
+| Option | |
+|---|---|
+| `size` | How wide each cover is, in px |
+| `layout` | `grid` (default) or `table` |
+| `columns` | Which columns a table shows. Default: `cover, title, author, year, rating` |
+| `empty` | What to say when nothing matches |
+
+- `active` gets an accent outline
+- `wishlist` dims until hover
+- `abandoned` desaturates. Editing a ledger repaints every open shelf that reads it.
 
 - `total` counts everything `where` matched, **before** `limit` trims the display —
 a number that shrinks when you cap the grid isn't a total.
 
-- **Group headers fold.** Click one to collapse its shelf. The state is keyed by
-note and group name and kept in the plugin's data, so it survives a re-render
-and a reload rather than springing back open every time a ledger changes.
+- **Group headers fold.** Click one to collapse its shelf.
 
 ## Appearance
 

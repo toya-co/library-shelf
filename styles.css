@@ -267,15 +267,21 @@
   font-variant-numeric: tabular-nums;
 }
 /* Marks the rows that graduated into real notes. */
-.lib-hasnote {
-  position: absolute;
-  bottom: 5px;
-  left: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ax2, var(--text-accent));
-  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.35);
+/* Sits inline before the title, so it flows with the two-line clamp instead of
+   floating over the artwork. Sized off the title text rather than fixed px, so it
+   tracks whatever `size` the shelf is rendered at. */
+.lib-noteicon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -0.12em;
+  margin-right: 0.3em;
+  color: var(--lib-accent);
+  flex-shrink: 0;
+}
+.lib-noteicon .svg-icon {
+  width: 0.95em;
+  height: 0.95em;
+  stroke-width: 2;
 }
 
 .lib-item[data-status="wishlist"] .lib-art {
