@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS = {
   layout: "grid",
   deriveCovers: true,
   ledgerFolder: "Library",
+  notesFolder: "Library/notes",
   tmdbApiKey: "",
   collapsed: {},
 };
@@ -76,14 +77,18 @@ async function readLedger(app, ref) {
   return { entries, missing: null };
 }
 
-async function appendEntry(app, ref, entry) {
+/* One write path for the ledger: read, hand the live array to `mutate`, splice the
+   block back in its own format. Appending and editing an entry are the same
+   operation to the file, so they share the format-preserving half rather than
+   growing a second copy of it that drifts. */
+async function writeLedger(app, ref, mutate) {
   const path = toPath(ref);
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) throw new Error("No ledger at " + path);
   const raw = await app.vault.read(file);
   const block = findDataBlock(raw);
   if (!block) throw new Error("No library block in " + file.basename);
-  block.parsed.library.push(entry);
+  mutate(block.parsed.library);
   const body =
     block.lang === "json"
       ? JSON.stringify(block.parsed, null, 2)
@@ -91,6 +96,41 @@ async function appendEntry(app, ref, entry) {
   const fence = "```" + block.lang + "\n" + body + "\n```";
   const next = raw.slice(0, block.start) + fence + raw.slice(block.start + block.length);
   await app.vault.modify(file, next);
+}
+
+async function appendEntry(app, ref, entry) {
+  await writeLedger(app, ref, (lib) => lib.push(entry));
+}
+
+/* Titles are matched loosely — trimmed and case-folded — because the whole point
+   is catching the near-miss a person wouldn't notice. */
+const titleKey = (t) => String(t ?? "").trim().toLowerCase();
+
+async function findEntryByTitle(app, ref, title) {
+  const path = toPath(ref);
+  const file = app.vault.getAbstractFileByPath(path);
+  if (!(file instanceof TFile)) return null;
+  const block = findDataBlock(await app.vault.cachedRead(file));
+  if (!block) return null;
+  const key = titleKey(title);
+  const i = block.parsed.library.findIndex((e) => titleKey(e.title) === key);
+  return i === -1 ? null : { index: i, entry: block.parsed.library[i] };
+}
+
+/* A reread is another date on the same row, never a second row — that's why
+   `finished` is a list. Scalars written by hand get promoted on the way. */
+function addFinishedDate(entry, date) {
+  const cur = entry.finished;
+  const list = cur == null ? [] : Array.isArray(cur) ? cur.slice() : [cur];
+  if (!list.map(String).includes(date)) list.push(date);
+  entry.finished = list;
+  entry.status = "done";
+}
+
+function todayStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 }
 
 /* Explicit cover wins. Otherwise derive one from an identifier — Open Library's
@@ -199,6 +239,14 @@ class ShelfChild extends MarkdownRenderChild {
 
   watches(path) {
     return this.sources.includes(path);
+  }
+
+  /* Reads whichever ledgers were resolved on the last render, not a fixed list —
+     a card with no `from` doesn't know its sources until it has looked. */
+  async resolveSources() {
+    if (this.opts.from) return this.sources;
+    this.sources = (await this.plugin.findLedgers()).map(toPath);
+    return this.sources;
   }
 
   openNote(entry, evt) {
@@ -368,6 +416,91 @@ class ShelfChild extends MarkdownRenderChild {
     for (const it of items) this.tile(grid, it);
   }
 
+  /* ---------- the note-side card ---------- */
+
+  /* Rendered by a `library-card` block at the top of a note the ledger points at.
+     It takes no arguments: the note knows its own path, and the ledger row that
+     claims it is the one whose `note:` resolves here. That direction matters —
+     the note stays prose with one inert block in it, and every field on the card
+     is still owned by the ledger, so there is nothing to keep in sync. */
+  async renderCard() {
+    const el = this.containerEl;
+    el.empty();
+    const root = el.createDiv({ cls: "lib-card" });
+
+    let hit = null;
+    for (const src of await this.resolveSources()) {
+      const res = await readLedger(this.plugin.app, src);
+      const found = res.entries.find((e) => e.note && toPath(e.note) === toPath(this.sourcePath));
+      if (found) {
+        hit = { entry: found, ledger: src };
+        break;
+      }
+    }
+
+    if (!hit) {
+      root.createDiv({
+        cls: "lib-card-empty",
+        text:
+          "No ledger entry points here yet. Add `note: " +
+          this.sourcePath.replace(/\.md$/, "") +
+          "` to the row this note is about.",
+      });
+      return;
+    }
+
+    const { entry, ledger } = hit;
+    const by = creatorOf(entry);
+
+    const url = coverUrl(entry, this.plugin.settings);
+    const art = root.createDiv({ cls: "lib-card-art" });
+    if (url) {
+      const img = art.createEl("img", { attr: { src: url, alt: entry.title ?? "" } });
+      watchCover(img, () => {
+        art.empty();
+        art.addClass("is-blank");
+      });
+    } else {
+      art.addClass("is-blank");
+    }
+
+    const body = root.createDiv({ cls: "lib-card-body" });
+    body.createDiv({ cls: "lib-card-title", text: entry.title ?? "Untitled" });
+    const sub = [by, entry.year].filter(Boolean).join(" · ");
+    if (sub) body.createDiv({ cls: "lib-card-by", text: sub });
+
+    const chips = body.createDiv({ cls: "lib-card-chips" });
+    const chip = (text, mod) => {
+      const c = chips.createSpan({ cls: "lib-chip", text });
+      if (mod) c.dataset.chip = mod;
+      return c;
+    };
+    if (entry.status) chip(entry.status, entry.status);
+    if (entry.rating != null) chip(entry.rating + "★", "rating");
+    const sittings = entry.finished == null ? [] : [].concat(entry.finished);
+    if (sittings.length) {
+      chip(sittings.length === 1 ? "read once" : "read " + sittings.length + "×", "sittings");
+    }
+    if (entry.shelf) chip(entry.shelf);
+
+    if (sittings.length) {
+      body.createDiv({ cls: "lib-card-dates", text: sittings.map(String).join(" · ") });
+    }
+
+    /* Back-link: the shelf already links here, so this closes the loop rather
+       than leaving the note a dead end. */
+    const back = body.createDiv({ cls: "lib-card-back" });
+    const a = back.createEl("a", {
+      cls: "internal-link",
+      text: "on " + ledger.replace(/\.md$/, "").split("/").pop(),
+      attr: { href: ledger },
+    });
+    a.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      this.plugin.app.workspace.openLinkText(ledger, this.sourcePath, Keymap.isModEvent(evt));
+    });
+  }
+
   tile(parent, entry) {
     const card = parent.createDiv({ cls: "lib-item" });
     if (entry.status) card.dataset.status = entry.status;
@@ -471,6 +604,14 @@ class ShelfChild extends MarkdownRenderChild {
     let v = entry[col];
     if (Array.isArray(v)) v = v.join(", ");
     td.setText(v == null ? "" : String(v));
+  }
+}
+
+/* Same lifecycle as a shelf — registered in plugin.shelves, repainted by the
+   modify handler — so a rating edited in the ledger updates the note's card. */
+class CardChild extends ShelfChild {
+  render() {
+    return this.renderCard();
   }
 }
 
@@ -630,7 +771,7 @@ class AddEntryModal extends Modal {
     }
   }
 
-  async commit(result) {
+  async commit(result, force) {
     const entry = { title: result.title, status: this.status };
     if (result.author) entry.author = result.author;
     if (result.year) entry.year = result.year;
@@ -638,12 +779,178 @@ class AddEntryModal extends Modal {
     if (result.isbn) entry.isbn = result.isbn;
     else if (result.cover) entry.cover = result.cover;
 
+    /* Silently writing a second row for a title already on the shelf loses the
+       thing the ledger is for. Offer the edits that were actually wanted, and keep
+       a duplicate available — a different edition or translation is a real one. */
+    if (!force) {
+      let hit = null;
+      try { hit = await findEntryByTitle(this.app, this.ledger, entry.title); } catch (e) {}
+      if (hit) return this.showExisting(result, hit);
+    }
+
     try {
       await appendEntry(this.app, this.ledger, entry);
       new Notice("Added “" + entry.title + "” to " + this.ledger.replace(/\.md$/, ""));
       this.close();
     } catch (e) {
       new Notice("Couldn't add: " + e.message);
+    }
+  }
+
+  showExisting(result, hit) {
+    const { entry, index } = hit;
+    const ledgerName = this.ledger.replace(/\.md$/, "");
+    this.resultsEl.empty();
+
+    const box = this.resultsEl.createDiv({ cls: "lib-dupe" });
+    box.createDiv({
+      cls: "lib-dupe-title",
+      text: "“" + entry.title + "” is already in " + ledgerName,
+    });
+    const bits = [
+      entry.status,
+      entry.rating != null ? entry.rating + "★" : null,
+      Array.isArray(entry.finished)
+        ? entry.finished.length + (entry.finished.length === 1 ? " sitting" : " sittings")
+        : entry.finished
+        ? "1 sitting"
+        : null,
+    ].filter(Boolean);
+    if (bits.length) box.createDiv({ cls: "lib-dupe-sub", text: bits.join(" · ") });
+
+    const act = (label, fn) => {
+      const b = box.createEl("button", { cls: "lib-dupe-btn", text: label });
+      b.addEventListener("click", async () => {
+        try {
+          await fn();
+          this.close();
+        } catch (e) {
+          new Notice("Couldn't update: " + e.message);
+        }
+      });
+      return b;
+    };
+
+    const today = todayStamp();
+    act("Finished again today", async () => {
+      await writeLedger(this.app, this.ledger, (lib) => addFinishedDate(lib[index], today));
+      new Notice("“" + entry.title + "” — another sitting, " + today);
+    });
+
+    if (entry.status !== this.status) {
+      act("Set status to " + this.status, async () => {
+        await writeLedger(this.app, this.ledger, (lib) => (lib[index].status = this.status));
+        new Notice("“" + entry.title + "” is now " + this.status);
+      });
+    }
+
+    /* Not through act(): commit() closes on success and leaves the modal open with
+       a Notice on failure, so wrapping it would swallow the error behind a close. */
+    const sep = box.createEl("button", { cls: "lib-dupe-btn", text: "Add as a separate entry" });
+    sep.addEventListener("click", () => this.commit(result, true));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/* Promotion was a two-step manual job: make the file, then hand-write `note:`
+   back onto the row. Both halves fail quietly on their own — a note nothing points
+   at, or a `note:` pointing at a file that doesn't exist — so they're one action. */
+class PromoteModal extends Modal {
+  constructor(plugin) {
+    super(plugin.app);
+    this.plugin = plugin;
+    this.ledger = "";
+    this.pick = null;
+  }
+
+  async onOpen() {
+    this.titleEl.setText("Create note for a library entry");
+    const { contentEl } = this;
+    contentEl.addClass("lib-add-modal");
+
+    const ledgers = await this.plugin.findLedgers();
+    if (!ledgers.length) {
+      contentEl.createDiv({ cls: "lib-error", text: "No ledger notes found." });
+      return;
+    }
+    this.ledger = ledgers[0];
+
+    new Setting(contentEl).setName("Ledger").addDropdown((d) => {
+      for (const l of ledgers) d.addOption(l, l.replace(/\.md$/, ""));
+      d.setValue(this.ledger).onChange((v) => {
+        this.ledger = v;
+        this.list();
+      });
+    });
+
+    const search = new Setting(contentEl).setName("Filter");
+    search.addText((t) => {
+      t.setPlaceholder("Title…");
+      t.onChange((v) => {
+        this.query = v;
+        this.list();
+      });
+      window.setTimeout(() => t.inputEl.focus(), 0);
+    });
+
+    this.resultsEl = contentEl.createDiv({ cls: "lib-results" });
+    this.list();
+  }
+
+  async list() {
+    this.resultsEl.empty();
+    const res = await readLedger(this.plugin.app, this.ledger);
+    const q = titleKey(this.query || "");
+    /* Entries that already have a note are the ones this command has nothing to
+       do, so they're out of the list rather than sitting there as no-ops. */
+    const open = res.entries.filter((e) => !e.note && (!q || titleKey(e.title).includes(q)));
+
+    if (!open.length) {
+      this.resultsEl.createDiv({
+        cls: "lib-results-note",
+        text: q ? "No match without a note already." : "Every entry here already has a note.",
+      });
+      return;
+    }
+
+    for (const e of open.slice(0, 12)) {
+      const row = this.resultsEl.createDiv({ cls: "lib-result" });
+      const text = row.createDiv({ cls: "lib-result-text" });
+      text.createDiv({ cls: "lib-result-title", text: e.title ?? "Untitled" });
+      const sub = [creatorOf(e), e.year].filter(Boolean).join(" · ");
+      if (sub) text.createDiv({ cls: "lib-result-sub", text: sub });
+      row.addEventListener("click", () => this.promote(e));
+    }
+  }
+
+  async promote(entry) {
+    const folder = (this.plugin.settings.notesFolder || "Library/notes").replace(/\/$/, "");
+    /* Obsidian forbids these in a filename; a title carrying one would otherwise
+       fail at create() with a message about the path rather than the title. */
+    const safe = String(entry.title ?? "Untitled").replace(/[\\/:*?"<>|#^[\]]/g, "").trim();
+    const notePath = folder + "/" + safe + ".md";
+
+    try {
+      if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+        await this.app.vault.createFolder(folder);
+      }
+      if (!this.app.vault.getAbstractFileByPath(notePath)) {
+        await this.app.vault.create(notePath, "```library-card\n```\n\n");
+      }
+      const ref = notePath.replace(/\.md$/, "");
+      await writeLedger(this.app, this.ledger, (lib) => {
+        const i = lib.findIndex((e) => titleKey(e.title) === titleKey(entry.title));
+        if (i !== -1) lib[i].note = ref;
+      });
+      new Notice("Created " + ref);
+      this.close();
+      const file = this.app.vault.getAbstractFileByPath(notePath);
+      if (file) await this.app.workspace.getLeaf(false).openFile(file);
+    } catch (e) {
+      new Notice("Couldn't promote: " + e.message);
     }
   }
 
@@ -670,6 +977,16 @@ class LibraryShelfSettingTab extends PluginSettingTab {
       .addText((t) =>
         t.setValue(this.plugin.settings.ledgerFolder).onChange(async (v) => {
           this.plugin.settings.ledgerFolder = v.trim();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Notes folder")
+      .setDesc("Where “Create note for a library entry” puts the note it makes.")
+      .addText((t) =>
+        t.setValue(this.plugin.settings.notesFolder).onChange(async (v) => {
+          this.plugin.settings.notesFolder = v.trim();
           await this.plugin.saveSettings();
         })
       );
@@ -753,10 +1070,27 @@ module.exports = class LibraryShelfPlugin extends Plugin {
     );
     this.registerEvent(this.app.vault.on("modify", onChange));
 
+    this.registerMarkdownCodeBlockProcessor("library-card", (source, el, ctx) => {
+      let opts = {};
+      try {
+        opts = parseYaml(source) || {};
+      } catch (e) {
+        el.createDiv({ cls: "lib-error", text: "Bad block options: " + e.message });
+        return;
+      }
+      ctx.addChild(new CardChild(this, el, opts, ctx.sourcePath));
+    });
+
     this.addCommand({
       id: "add-entry",
       name: "Add to library",
       callback: () => new AddEntryModal(this).open(),
+    });
+
+    this.addCommand({
+      id: "promote-entry",
+      name: "Create note for a library entry",
+      callback: () => new PromoteModal(this).open(),
     });
 
     this.addSettingTab(new LibraryShelfSettingTab(this.app, this));

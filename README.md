@@ -102,13 +102,21 @@ empty: Nothing on the go.
 **3. Lookup and append.** Command palette → **Add to library**. Ledger
 `Library/Books.md`, status `wishlist`, search `your book`.
 
+  - you get the entry instead of a second row — with its status, rating and sitting count — and three choices: record another sitting (appends today to `finished`), change its status, or add it as a separate entry anyway.
+
 ### Giving media its own note
 
-**Create `Library/notes/`, then add `note: <path>` to the corresponding row in ledger:**
+Command palette → **Create note for a library entry**. 
+  - Pick a ledger, click a title: it makes the note, drops a `library-card` block in it and writes `note:` inot ledger row. Entries that already have a note aren't listed.
 
-The path is vault-relative and takes no `.md`. Once it's there the shelf puts a
-notebook icon before the title, links the title, and makes the cover clickable —
-all three open the note.
+By hand: create the note, add `note: <path>` to the corresponding ledger entry, and add the block below to the start of the note:
+
+A `library-card` block renders the entry at the top of its own note:
+
+````markdown
+```library-card
+```
+````
 
 ## Library Hub View
 
@@ -227,7 +235,7 @@ colour. Misses are common enough that this is a normal state, not an error.
 
 ## Settings
 
-Ledger folder · default layout · cover width · derive covers · TMDB API key.
+Ledger folder · notes folder · default layout · cover width · derive covers · TMDB API key.
 
 ### Logic checks without Obsidian
 
