@@ -39,24 +39,62 @@
 .lib-total {
   display: flex;
   align-items: baseline;
-  gap: 0.45em;
-  margin-bottom: 0.35em;
+  gap: 0.55em;
+  /* the count is a heading for the stat row, not a line of it — it needs enough
+     air under it to read as one */
+  margin-bottom: 1.35em;
 }
 
 /* A frontispiece row — the counts already exist in the data, and showing them
-   gives the top of the page something to sit on. */
+   gives the top of the page something to sit on. Generous spacing throughout:
+   this block is a title page, and a title page is mostly space. */
 .lib-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.4em;
-  padding-bottom: 0.9em;
-  margin-bottom: 1.1em;
+  gap: 0.6em 2.2em;
+  padding-bottom: 1.25em;
+  margin-bottom: 1.7em;
   border-bottom: 1px solid var(--divider-color, var(--ui1));
 }
 .lib-stat {
   display: flex;
   align-items: baseline;
   gap: 0.35em;
+  /* every cell carries the rule, transparent unless active, so a facet turning
+     on doesn't shift the row's baseline */
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+}
+
+/* The status cells are facets — click one to filter the shelf to it, click it
+   again to clear. The avg-rating cell isn't one and doesn't get the affordance. */
+.lib-stat.mod-facet {
+  cursor: pointer;
+  transition: border-color 120ms ease, opacity 120ms ease;
+}
+.lib-stat.mod-facet:hover {
+  border-bottom-color: var(--lib-fg-dim);
+}
+.lib-stat.mod-facet:hover .lib-stat-label {
+  color: var(--lib-fg);
+}
+.lib-stat.mod-facet:focus-visible {
+  outline: none;
+  border-bottom-color: var(--lib-accent);
+}
+.lib-stat.mod-facet.is-active {
+  border-bottom-color: var(--lib-accent);
+}
+.lib-stat.mod-facet.is-active .lib-stat-label {
+  color: var(--lib-accent);
+}
+/* Recede the facets not in play, so the active one reads as a filter rather
+   than as a label that happens to be coloured. */
+.lib-stats.has-facet .lib-stat:not(.is-active) {
+  opacity: 0.5;
+}
+.lib-stats.has-facet .lib-stat:not(.is-active):hover {
+  opacity: 1;
 }
 .lib-stat-n {
   font-family: var(--lib-display);

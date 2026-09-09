@@ -177,6 +177,11 @@ class ShelfChild extends MarkdownRenderChild {
     this.opts = opts ?? {};
     this.sourcePath = sourcePath;
     this.sources = [].concat(this.opts.from ?? sourcePath).map(toPath);
+    /* Transient view state, not settings: a facet narrows what's shown without
+       touching the ledger or the block options. It survives the modify-event
+       repaint because that re-renders this same child, and resets when the note
+       is closed — which is what you want from a filter you clicked once. */
+    this.facet = null;
   }
 
   onload() {
@@ -242,33 +247,64 @@ class ShelfChild extends MarkdownRenderChild {
     /* count what matched before `limit` trims it — a total that changes when you
        cap the display isn't a total */
     const matched = applyOptions(entries, Object.assign({}, opts, { limit: null }));
-    const items = opts.limit ? matched.slice(0, Number(opts.limit)) : matched;
 
-    if (!items.length) {
+    /* An empty shelf is empty before any facet is applied — check that first, so
+       a facet that matches nothing still leaves the stat row on screen to click
+       back out of. */
+    if (!matched.length) {
       root.createDiv({ cls: "lib-empty", text: opts.empty ?? "Nothing on this shelf yet." });
       return;
     }
 
+    /* A ledger edit can retire the status a facet is pinned to, and the stat row
+       only draws statuses it still counts — so a stale facet would filter the
+       shelf to nothing with no cell left to click back out of. Drop it instead. */
+    if (this.facet && !matched.some((it) => it.status === this.facet)) this.facet = null;
+
+    const shown = this.facet ? matched.filter((it) => it.status === this.facet) : matched;
+    const items = opts.limit ? shown.slice(0, Number(opts.limit)) : shown;
+
     if (opts.total) {
       const total = root.createDiv({ cls: "lib-total" });
-      total.createSpan({ cls: "lib-total-count", text: String(matched.length) });
+      total.createSpan({ cls: "lib-total-count", text: String(shown.length) });
       total.createSpan({
         cls: "lib-total-label",
-        text: typeof opts.total === "string" ? opts.total : matched.length === 1 ? "entry" : "entries",
+        text: typeof opts.total === "string" ? opts.total : shown.length === 1 ? "entry" : "entries",
       });
 
       if (opts.stats) {
+        /* Counted from `matched`, never from `shown` — the stat row is the
+           navigation, so its numbers have to hold still while you click across
+           it rather than collapsing to the facet you just picked. */
         const counts = new Map();
         for (const it of matched) {
           if (it.status) counts.set(it.status, (counts.get(it.status) ?? 0) + 1);
         }
         const row = root.createDiv({ cls: "lib-stats" });
+        row.classList.toggle("has-facet", !!this.facet);
         for (const st of STATUSES) {
           if (!counts.has(st)) continue;
-          const cell = row.createDiv({ cls: "lib-stat" });
+          const cell = row.createDiv({ cls: "lib-stat mod-facet" });
           cell.dataset.status = st;
           cell.createSpan({ cls: "lib-stat-n", text: String(counts.get(st)) });
           cell.createSpan({ cls: "lib-stat-label", text: st });
+
+          const on = this.facet === st;
+          cell.classList.toggle("is-active", on);
+          cell.setAttribute("role", "button");
+          cell.setAttribute("tabindex", "0");
+          cell.setAttribute("aria-pressed", String(on));
+          const toggle = () => {
+            this.facet = on ? null : st;
+            this.render();
+          };
+          cell.addEventListener("click", toggle);
+          cell.addEventListener("keydown", (evt) => {
+            if (evt.key === "Enter" || evt.key === " ") {
+              evt.preventDefault();
+              toggle();
+            }
+          });
         }
         const rated = matched.filter((it) => typeof it.rating === "number");
         if (rated.length) {
@@ -278,6 +314,14 @@ class ShelfChild extends MarkdownRenderChild {
           cell.createSpan({ cls: "lib-stat-label", text: "avg rating" });
         }
       }
+    }
+
+    if (!items.length) {
+      root.createDiv({
+        cls: "lib-empty",
+        text: this.facet ? "Nothing " + this.facet + " on this shelf." : opts.empty ?? "Nothing on this shelf yet.",
+      });
+      return;
     }
 
     const layout = opts.layout ?? settings.layout;
