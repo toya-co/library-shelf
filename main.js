@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS = {
   ledgerFolder: "Library",
   notesFolder: "Library/notes",
   tmdbApiKey: "",
+  deskStyle: "bookcase",
   collapsed: {},
 };
 
@@ -801,7 +802,6 @@ class CardChild extends ShelfChild {
 class DeskChild extends ShelfChild {
   async render() {
     const seq = (this.renderSeq = (this.renderSeq ?? 0) + 1);
-    const opts = this.opts;
     let entries = [];
     for (const src of await this.resolveSources()) {
       entries = entries.concat((await readLedger(this.plugin.app, src)).entries);
@@ -809,12 +809,30 @@ class DeskChild extends ShelfChild {
     if (seq !== this.renderSeq) return;
     const el = this.containerEl;
     el.empty();
-    const root = el.createDiv({ cls: "lib-desk" });
 
     const now = entries.filter((e) => e.status === "active");
-    const covers = root.createDiv({ cls: "lib-desk-covers" });
-    for (const entry of now.slice(0, Number(opts.covers) || 3)) {
-      const art = covers.createDiv({ cls: "lib-art lib-desk-cover" });
+    const rated = entries.filter((e) => typeof e.rating === "number");
+    let last = null;
+    for (const e of entries) {
+      for (const d of finishedDates(e)) if (!last || d > last.d) last = { d, e };
+    }
+    const goal = Number(this.opts.goal) > 0 ? Number(this.opts.goal) : 0;
+    const d = {
+      now,
+      wishlist: entries.filter((e) => e.status === "wishlist").length,
+      avg: rated.length ? (rated.reduce((a, e) => a + e.rating, 0) / rated.length).toFixed(1) : null,
+      last: last ? last.e.title ?? "Untitled" : null,
+      year: new Date().getFullYear(),
+      done: applyOptions(entries, { year: "current" }).length,
+      goal,
+    };
+    if (this.plugin.settings.deskStyle === "classic") this.renderClassic(el, d);
+    else this.renderCase(el, d);
+  }
+
+  drawCovers(parent, list, max) {
+    for (const entry of list.slice(0, Number(this.opts.covers) || max)) {
+      const art = parent.createDiv({ cls: "lib-art lib-desk-cover" });
       const blank = () => {
         art.empty();
         art.addClass("is-blank");
@@ -827,36 +845,98 @@ class DeskChild extends ShelfChild {
       art.addEventListener("click", (evt) => (entry.note ? this.openNote(entry, evt) : this.entryMenu(entry, evt)));
       art.addEventListener("contextmenu", (evt) => this.entryMenu(entry, evt));
     }
+  }
+
+  titles(d, sep) {
+    return d.now.length ? d.now.map((e) => e.title ?? "Untitled").join(sep) : "Nothing right now.";
+  }
+
+  /* The original desk: covers, titles and chips in a card, the year as a ring. */
+  renderClassic(el, d) {
+    const root = el.createDiv({ cls: "lib-desk is-classic" });
+    this.drawCovers(root.createDiv({ cls: "lib-desk-covers" }), d.now, 3);
 
     const mid = root.createDiv({ cls: "lib-desk-mid" });
-    mid.createDiv({ cls: "lib-desk-label", text: opts.label ?? "Currently reading" });
-    mid.createDiv({
-      cls: "lib-desk-titles",
-      text: now.length ? now.map((e) => e.title ?? "Untitled").join(", ") : "Nothing right now.",
-    });
-
+    mid.createDiv({ cls: "lib-desk-label", text: this.opts.label ?? "Currently reading" });
+    mid.createDiv({ cls: "lib-desk-titles", text: this.titles(d, ", ") });
     const chips = mid.createDiv({ cls: "lib-desk-chips" });
     const chip = (text) => chips.createSpan({ cls: "lib-desk-chip", text });
-    const count = (st) => entries.filter((e) => e.status === st).length;
-    chip(now.length + " active");
-    chip(count("wishlist") + " wishlist");
-    const rated = entries.filter((e) => typeof e.rating === "number");
-    if (rated.length) chip((rated.reduce((a, e) => a + e.rating, 0) / rated.length).toFixed(1) + " avg");
-    let last = null;
-    for (const e of entries) {
-      for (const d of finishedDates(e)) if (!last || d > last.d) last = { d, e };
-    }
-    if (last) chip("last finished: " + (last.e.title ?? "Untitled"));
+    chip(d.now.length + " active");
+    chip(d.wishlist + " wishlist");
+    if (d.avg) chip(d.avg + " avg");
+    if (d.last) chip("last finished: " + d.last);
 
-    /* The year against a goal: a ring when there's a `goal`, the bare count when not. */
-    const year = new Date().getFullYear();
-    const done = applyOptions(entries, { year: "current" }).length;
-    const goal = Number(opts.goal) > 0 ? Number(opts.goal) : 0;
     const side = root.createDiv({ cls: "lib-desk-year" });
-    const ring = side.createDiv({ cls: "lib-desk-ring" + (goal ? "" : " is-bare") });
-    ring.style.setProperty("--lib-progress", String(goal ? Math.min(100, Math.round((done / goal) * 100)) : 0));
-    ring.createSpan({ cls: "lib-desk-ring-n", text: goal ? done + "/" + goal : String(done) });
-    side.createDiv({ cls: "lib-desk-ring-label", text: goal ? year + " goal" : "finished in " + year });
+    const ring = side.createDiv({ cls: "lib-desk-ring" + (d.goal ? "" : " is-bare") });
+    ring.style.setProperty("--lib-progress", String(d.goal ? Math.min(100, Math.round((d.done / d.goal) * 100)) : 0));
+    ring.createSpan({ cls: "lib-desk-ring-n", text: d.goal ? d.done + "/" + d.goal : String(d.done) });
+    side.createDiv({ cls: "lib-desk-ring-label", text: d.goal ? d.year + " goal" : "finished in " + d.year });
+  }
+
+  /* The bookcase: a brass rail and two grained shelves. Top shelf — the last finished
+     on a brass label over two books lying flat, the average as a note pinned to the
+     back, and the year as a row of little books filling toward the goal. Bottom
+     shelf — what you're reading. The ladder is decoration: CSS only, no pointer. */
+  renderCase(el, d) {
+    const root = el.createDiv({ cls: "lib-desk is-case" });
+    const kase = root.createDiv({ cls: "lib-desk-case" });
+    kase.createDiv({ cls: "lib-desk-rail" });
+    kase.createDiv({ cls: "lib-desk-ladder" }).setAttribute("aria-hidden", "true");
+
+    const top = kase.createDiv({ cls: "lib-desk-top" });
+    const left = top.createDiv({ cls: "lib-desk-left" });
+    if (d.last) {
+      const plate = left.createDiv({ cls: "lib-desk-plate" });
+      plate.createDiv({ cls: "lib-desk-plate-label", text: "last finished" });
+      plate.createDiv({ cls: "lib-desk-plate-title", text: d.last });
+    }
+    const stack = left.createDiv({ cls: "lib-desk-stack" });
+    const spine = (n, text) => {
+      const s = stack.createDiv({ cls: "lib-desk-spine" });
+      s.createSpan({ cls: "lib-desk-spine-n", text: String(n) });
+      s.createSpan({ text });
+    };
+    spine(d.wishlist, "on the wishlist");
+    spine(d.now.length, "in progress");
+
+    if (d.avg) {
+      const note = top.createDiv({ cls: "lib-desk-note" });
+      note.createDiv({ cls: "lib-desk-note-n", text: d.avg });
+      note.createDiv({ cls: "lib-desk-note-label", text: "avg rating" });
+    }
+
+    /* One little book per title finished this year, against empty slots up to the
+       goal. The top shelf holds 40 — the second 20 stand behind the ladder — and the
+       rest drop to the right end of the bottom shelf. Past 100 each book stands for
+       more than one. */
+    const goalEl = top.createDiv({ cls: "lib-desk-goal" });
+    goalEl.setAttribute("aria-label", d.goal ? d.done + " of " + d.goal + " in " + d.year : d.done + " finished in " + d.year);
+    goalEl.createDiv({
+      cls: "lib-desk-goal-tag",
+      text: d.goal ? d.done + " of " + d.goal + " · " + d.year : d.done + " in " + d.year,
+    });
+    const target = d.goal || d.done;
+    const slots = Math.min(target, 100);
+    const filled = target ? Math.min(slots, Math.round((d.done / target) * slots)) : 0;
+    const book = (row, i) => {
+      const b = row.createSpan({ cls: "lib-desk-goal-book" + (i < filled ? " is-read" : "") });
+      b.style.height = 30 + ((i * 7) % 5) * 3 + "px";
+      b.style.setProperty("--lib-tone", String(i % 4));
+    };
+    const row = goalEl.createDiv({ cls: "lib-desk-goal-row" });
+    for (let i = 0; i < Math.min(slots, 40); i++) book(row, i);
+    kase.createDiv({ cls: "lib-desk-board" });
+
+    kase.createDiv({ cls: "lib-desk-label", text: this.opts.label ?? "Currently reading" });
+    const lower = kase.createDiv({ cls: "lib-desk-books" });
+    this.drawCovers(lower.createDiv({ cls: "lib-desk-covers" }), d.now, 4);
+    if (slots > 40) {
+      const more = lower.createDiv({ cls: "lib-desk-goal-row is-overflow" });
+      for (let i = 40; i < slots; i++) book(more, i);
+    }
+    kase.createDiv({ cls: "lib-desk-board" });
+
+    root.createDiv({ cls: "lib-desk-titles", text: this.titles(d, " · ") });
   }
 }
 
@@ -1764,6 +1844,21 @@ class LibraryShelfSettingTab extends PluginSettingTab {
           this.plugin.refreshAll();
         })
     );
+
+    new Setting(containerEl)
+      .setName("Reading desk")
+      .setDesc("How a library-desk block looks.")
+      .addDropdown((d) =>
+        d
+          .addOption("bookcase", "Bookcase")
+          .addOption("classic", "Classic card")
+          .setValue(this.plugin.settings.deskStyle)
+          .onChange(async (v) => {
+            this.plugin.settings.deskStyle = v;
+            await this.plugin.saveSettings();
+            this.plugin.refreshAll();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Cover width")

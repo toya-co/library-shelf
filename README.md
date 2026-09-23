@@ -4,6 +4,7 @@ A shelf of your books and films in Obsidian: one ledger note per library, no fil
 
 <p align="center">
   <img src="./images/libraryhub-desk.png" alt="The library hub: the reading desk with current books and the year goal, the search and add bar, then the Now shelf" />
+  <img src="./images/libraryhub-bookcase.png" alt="The bookcase desk: last finished, wishlist and in-progress books and a pinned average rating on the top shelf beside the year's goal row, current covers below, and a rolling ladder" />
 </p>
 
 ## Getting started
@@ -14,10 +15,11 @@ opens the hub. Every click after that just opens it.
 
 ## The reading desk
 
-The hub opens with a desk: covers and titles of what you're currently reading, how
-many are active and on the wishlist, your average rating, the last thing you
-finished, and how many you've finished this year. Give it a goal and that count
-becomes a ring.
+The hub opens with a desk drawn as a bookcase: what you're currently reading on
+the lower shelf; the last thing you finished, how many are in progress and on the
+wishlist, and your average rating on the top one; and the year's finished titles as
+a row of little books filling toward your goal. Prefer a plain card with a goal
+ring? Switch **Reading desk** to *Classic card* in settings.
 
 ````markdown
 ```library-desk
@@ -27,9 +29,9 @@ goal: 30
 
 | Option | |
 |---|---|
-| `goal` | Draws the year as a ring against it — "11/30" |
+| `goal` | Fills the year's row against it — "11 of 30" |
 | `from` | Ledgers to read. Default: all of them |
-| `covers` | How many covers to show. Default 3 |
+| `covers` | How many covers to show. Default 4 (3 on the card) |
 | `label` | The heading. Default "Currently reading" |
 
 ## Adding
@@ -204,7 +206,7 @@ Four CSS variables, settable on `.lib-shelf` in a snippet:
 
 ## Settings
 
-Ledger folder · notes folder · default layout · cover width · derive covers · TMDB API key.
+Ledger folder · notes folder · default layout · reading desk · cover width · derive covers · TMDB API key.
 
 ## Licence
 

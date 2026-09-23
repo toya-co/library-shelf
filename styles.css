@@ -670,9 +670,9 @@
   flex: 0 0 auto;
 }
 
-/* ---------- the reading desk ---------- */
+/* ---------- the reading desk: classic card ---------- */
 
-.lib-desk {
+.lib-desk.is-classic {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -682,46 +682,46 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: 12px;
 }
-.lib-desk-covers {
+.lib-desk.is-classic .lib-desk-covers {
   --lib-cover-w: 64px;
   display: flex;
   gap: 8px;
 }
-.lib-desk-covers:empty {
+.lib-desk.is-classic .lib-desk-covers:empty {
   display: none;
 }
-.lib-desk-cover {
+.lib-desk.is-classic .lib-desk-cover {
   width: var(--lib-cover-w);
   --lib-ratio: 1.5;
   cursor: pointer;
   transition: transform 140ms ease;
 }
-.lib-desk-cover:hover {
+.lib-desk.is-classic .lib-desk-cover:hover {
   transform: translateY(-3px);
 }
-.lib-desk-mid {
+.lib-desk.is-classic .lib-desk-mid {
   flex: 1 1 220px;
   min-width: 0;
 }
-.lib-desk-label {
+.lib-desk.is-classic .lib-desk-label {
   font-size: 0.8em;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--lib-fg-dim);
 }
-.lib-desk-titles {
+.lib-desk.is-classic .lib-desk-titles {
   font-family: var(--lib-display);
   font-size: 1.15em;
   color: var(--lib-fg);
   margin: 2px 0 10px;
   line-height: 1.3;
 }
-.lib-desk-chips {
+.lib-desk.is-classic .lib-desk-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.lib-desk-chip {
+.lib-desk.is-classic .lib-desk-chip {
   font-size: 0.78em;
   padding: 2px 9px;
   border-radius: 999px;
@@ -731,13 +731,13 @@
 }
 
 /* The goal ring is a conic fill with the middle punched out — no SVG needed. */
-.lib-desk-year {
+.lib-desk.is-classic .lib-desk-year {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
 }
-.lib-desk-ring {
+.lib-desk.is-classic .lib-desk-ring {
   position: relative;
   width: 76px;
   height: 76px;
@@ -749,24 +749,338 @@
   display: grid;
   place-items: center;
 }
-.lib-desk-ring::before {
+.lib-desk.is-classic .lib-desk-ring::before {
   content: "";
   position: absolute;
   inset: 8px;
   border-radius: 50%;
   background: var(--background-secondary);
 }
-.lib-desk-ring.is-bare {
+.lib-desk.is-classic .lib-desk-ring.is-bare {
   background: var(--background-modifier-border);
 }
-.lib-desk-ring-n {
+.lib-desk.is-classic .lib-desk-ring-n {
   position: relative;
   font-family: var(--lib-display);
   font-size: 1.05em;
   color: var(--lib-fg);
   font-variant-numeric: lining-nums tabular-nums;
 }
-.lib-desk-ring-label {
+.lib-desk.is-classic .lib-desk-ring-label {
   font-size: 0.75em;
   color: var(--lib-fg-dim);
+}
+
+/* ---------- the reading desk: bookcase ---------- */
+
+/* A small bookcase: crown, a brass rail, two grained shelves, and a rolling ladder
+   hooked on the rail. The furniture (wood, brass, paper, ink) is the only fixed
+   color here; the book spines take the theme's accent. Override `--lib-wood` and
+   friends in a snippet to restain it. */
+.lib-desk.is-case {
+  --lib-wood: #7b4d27;
+  --lib-wood-dark: #553318;
+  --lib-brass: #b8862f;
+  --lib-card: #f1ead8;
+  --lib-ink: #3b2f22;
+  --lib-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='28'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 0.5' numOctaves='3' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0.16 0 0 0 0 0.09 0 0 0 0 0.03 0.9 0 0 0 -0.38'/%3E%3C/filter%3E%3Crect width='420' height='28' filter='url(%23g)'/%3E%3C/svg%3E");
+  container-type: inline-size;
+}
+.lib-desk.is-case .lib-desk-case {
+  position: relative;
+  padding: 24px 16px 0;
+  border-left: 9px solid var(--lib-wood-dark);
+  border-right: 9px solid var(--lib-wood-dark);
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, var(--lib-wood) 12%, var(--background-primary));
+  box-shadow: inset 0 10px 14px -10px rgba(0, 0, 0, 0.35);
+}
+.lib-desk.is-case .lib-desk-case::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -12px;
+  right: -12px;
+  height: 11px;
+  border-radius: 4px 4px 1px 1px;
+  background: var(--lib-grain), var(--lib-wood);
+  border-bottom: 2px solid var(--lib-wood-dark);
+}
+.lib-desk.is-case .lib-desk-rail {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to bottom, #e0b660, var(--lib-brass) 60%, #8a6220);
+}
+.lib-desk.is-case .lib-desk-board {
+  position: relative;
+  height: 9px;
+  margin: 0 -16px;
+  background: var(--lib-grain), var(--lib-wood);
+  border-top: 3px solid color-mix(in srgb, var(--lib-wood) 70%, #e9c89a);
+  border-bottom: 2px solid var(--lib-wood-dark);
+}
+
+/* Top shelf: label and stack on the left, the note pinned in the middle, the goal
+   row on the right. The last column is where the ladder stands. */
+.lib-desk.is-case .lib-desk-top {
+  display: grid;
+  grid-template-columns: auto minmax(12px, 1fr) auto minmax(12px, 1fr) minmax(120px, auto) 120px;
+  align-items: end;
+  padding: 8px 0 0 4px;
+}
+.lib-desk.is-case .lib-desk-left {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.lib-desk.is-case .lib-desk-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.lib-desk.is-case .lib-desk-spine {
+  --lib-spine: color-mix(in srgb, var(--lib-accent) 45%, #2c3526);
+  padding: 3px 18px;
+  font-family: var(--lib-display);
+  font-variant: small-caps;
+  font-size: 0.9em;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  color: #efe3c8;
+  border-radius: 2px;
+  background:
+    linear-gradient(to right, transparent 7px, rgba(226, 190, 120, 0.6) 7px 9px, transparent 9px calc(100% - 9px), rgba(226, 190, 120, 0.6) calc(100% - 9px) calc(100% - 7px), transparent calc(100% - 7px)),
+    var(--lib-spine);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+}
+.lib-desk.is-case .lib-desk-spine-n {
+  font-variant: normal;
+  font-variant-numeric: lining-nums;
+  font-size: 1.45em;
+  line-height: 1;
+  margin-right: 0.35em;
+  vertical-align: -0.08em;
+}
+.lib-desk.is-case .lib-desk-spine:first-child {
+  --lib-spine: color-mix(in srgb, var(--lib-accent) 30%, #5a2c20);
+  margin-left: 12px;
+}
+
+/* The average as a note pinned to the back of the case, with a brass-headed tack. */
+.lib-desk.is-case .lib-desk-note {
+  grid-column: 3;
+  align-self: start;
+  position: relative;
+  margin-top: 6px;
+  padding: 14px 18px 10px;
+  text-align: center;
+  color: var(--lib-ink);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.05), transparent 30%), #f3e7b8;
+  box-shadow: 1px 2px 0 rgba(0, 0, 0, 0.2), 3px 6px 8px -4px rgba(0, 0, 0, 0.3);
+  border-bottom-right-radius: 14px 5px;
+  transform: rotate(2deg);
+}
+.lib-desk.is-case .lib-desk-note::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 13px;
+  height: 13px;
+  margin-left: -6.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f07a6a, #b3322a 55%, #7a1d17);
+  box-shadow: 1px 2px 2px rgba(0, 0, 0, 0.35);
+}
+.lib-desk.is-case .lib-desk-note-n {
+  font-family: var(--lib-display);
+  font-size: 1.5em;
+  line-height: 1.2;
+}
+.lib-desk.is-case .lib-desk-note-label {
+  font-family: var(--lib-display);
+  font-style: italic;
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+
+/* A brass label holder, the kind screwed to a catalog drawer. */
+.lib-desk.is-case .lib-desk-plate {
+  position: relative;
+  max-width: 230px;
+  padding: 3px 16px 4px;
+  color: var(--lib-ink);
+  background: var(--lib-card);
+  border: 2px solid var(--lib-brass);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+.lib-desk.is-case .lib-desk-plate::before,
+.lib-desk.is-case .lib-desk-plate::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: var(--lib-brass);
+}
+.lib-desk.is-case .lib-desk-plate::before {
+  left: 4px;
+}
+.lib-desk.is-case .lib-desk-plate::after {
+  right: 4px;
+}
+.lib-desk.is-case .lib-desk-plate-label {
+  font-variant: small-caps;
+  font-size: 0.68em;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+.lib-desk.is-case .lib-desk-plate-title {
+  font-family: var(--lib-display);
+  font-style: italic;
+  font-size: 0.92em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Bottom shelf: what you're reading, with the ladder standing to its right. */
+.lib-desk.is-case .lib-desk-label {
+  font-family: var(--lib-display);
+  font-variant: small-caps;
+  font-size: 0.9em;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--text-normal) 85%, var(--lib-wood));
+  margin: 12px 0 6px 4px;
+}
+.lib-desk.is-case .lib-desk-books {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding: 0 4px;
+}
+.lib-desk.is-case .lib-desk-covers {
+  --lib-cover-w: 64px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.lib-desk.is-case .lib-desk-goal-row.is-overflow {
+  margin-left: auto;
+}
+.lib-desk.is-case .lib-desk-cover {
+  width: var(--lib-cover-w);
+  --lib-ratio: 1.5;
+  cursor: pointer;
+  border-radius: 1px 3px 3px 1px;
+  box-shadow: 2px 0 3px rgba(0, 0, 0, 0.25);
+  transition: transform 140ms ease;
+}
+.lib-desk.is-case .lib-desk-cover:hover {
+  transform: translateY(-3px);
+}
+
+/* The year's goal as a row of little books left of the ladder: read ones in
+   leather tones, the rest as empty slots, with a brass tag above. */
+.lib-desk.is-case .lib-desk-goal {
+  grid-column: 5 / 7;
+  justify-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.lib-desk.is-case .lib-desk-goal-tag {
+  padding: 1px 9px;
+  font-family: var(--lib-display);
+  font-size: 0.85em;
+  font-variant-numeric: lining-nums;
+  color: var(--lib-ink);
+  background: var(--lib-card);
+  border: 1.5px solid var(--lib-brass);
+  border-radius: 2px;
+}
+.lib-desk.is-case .lib-desk-goal-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+}
+.lib-desk.is-case .lib-desk-goal-book {
+  width: 5px;
+  border-radius: 1px 1px 0 0;
+  border: 1px dashed color-mix(in srgb, var(--lib-wood) 65%, transparent);
+  border-bottom: none;
+}
+.lib-desk.is-case .lib-desk-goal-book.is-read {
+  border: none;
+  background:
+    linear-gradient(to bottom, transparent 4px, rgba(226, 190, 120, 0.7) 4px 5px, transparent 5px),
+    color-mix(in srgb, var(--lib-accent) calc(20% + var(--lib-tone) * 12%), #4a2a1a);
+}
+
+/* The rolling ladder, drawn: stiles and dowel rungs tile down its length, hooks
+   curl over the rail, wheels rest on the lower shelf. Decoration only. */
+.lib-desk.is-case .lib-desk-ladder {
+  position: absolute;
+  top: 26px;
+  bottom: 12px;
+  right: 44px;
+  width: 64px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='30'%3E%3Crect x='10' y='15' width='44' height='7' rx='3.5' fill='rgba(0,0,0,.2)'/%3E%3Crect x='10' y='12' width='44' height='7' rx='3.5' fill='%238e5a2c'/%3E%3Crect x='11' y='13' width='42' height='2' rx='1' fill='%23c48f58'/%3E%3Crect x='2' y='0' width='10' height='30' fill='%236a401f'/%3E%3Crect x='4' y='0' width='2.5' height='30' fill='%23a06a3a'/%3E%3Crect x='52' y='0' width='10' height='30' fill='%236a401f'/%3E%3Crect x='54' y='0' width='2.5' height='30' fill='%23a06a3a'/%3E%3C/svg%3E") top / 64px 30px repeat-y;
+  transform: rotate(-4deg);
+  transform-origin: top center;
+  pointer-events: none;
+  z-index: 1;
+}
+.lib-desk.is-case .lib-desk-ladder::before {
+  content: "";
+  position: absolute;
+  top: -16px;
+  left: 0;
+  width: 64px;
+  height: 18px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='18'%3E%3Cpath d='M7 18 V9 a6 6 0 0 1 12 0 v2' stroke='%23b8862f' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3Cpath d='M57 18 V9 a6 6 0 0 0 -12 0 v2' stroke='%23b8862f' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat;
+}
+.lib-desk.is-case .lib-desk-ladder::after {
+  content: "";
+  position: absolute;
+  bottom: -12px;
+  left: -6px;
+  width: 76px;
+  height: 16px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='76' height='16'%3E%3Cg fill='%233a2616' stroke='%231e130a' stroke-width='1.5'%3E%3Ccircle cx='8' cy='8' r='6.5'/%3E%3Ccircle cx='68' cy='8' r='6.5'/%3E%3C/g%3E%3Cg fill='%23b8862f'%3E%3Ccircle cx='8' cy='8' r='2.2'/%3E%3Ccircle cx='68' cy='8' r='2.2'/%3E%3C/g%3E%3C/svg%3E") no-repeat;
+}
+
+.lib-desk.is-case .lib-desk-titles {
+  font-family: var(--lib-display);
+  font-style: italic;
+  font-size: 1em;
+  color: var(--lib-fg-dim);
+  margin: 10px 4px 0;
+  line-height: 1.35;
+}
+
+/* Narrow panes: the ladder steps out and the top shelf wraps. */
+@container (max-width: 620px) {
+  .lib-desk.is-case .lib-desk-ladder {
+    display: none;
+  }
+  .lib-desk.is-case .lib-desk-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px 22px;
+  }
+  .lib-desk.is-case .lib-desk-note {
+    align-self: flex-start;
+  }
 }
