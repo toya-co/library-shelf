@@ -189,7 +189,7 @@ An explicit `cover` always wins. Otherwise, with **Derive covers** on:
 - `isbn` → Open Library, then Amazon (a print book's ISBN-10 is its Amazon ID)
 - `asin` → Amazon
 
-Anything that still misses shows a titled card in the theme's accent colour.
+Anything that still misses shows a titled card in the theme's accent color.
 
 ## Appearance
 
@@ -197,8 +197,8 @@ Four CSS variables, settable on `.lib-shelf` in a snippet:
 
 | Variable | |
 |---|---|
-| `--lib-plinth` | Shelf board colour. Defaults to the theme's third accent |
-| `--lib-paper` | Fore-edge colour |
+| `--lib-plinth` | Shelf board color. Defaults to the theme's third accent |
+| `--lib-paper` | Fore-edge color |
 | `--lib-book-gap` | Space between books |
 | `--lib-display` | Serif face for shelf names and counts |
 
