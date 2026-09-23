@@ -886,8 +886,9 @@ class BarChild extends MarkdownRenderChild {
     const el = this.containerEl;
     el.empty();
     const bar = el.createDiv({ cls: "lib-bar" });
+    const row = bar.createDiv({ cls: "lib-bar-row" });
 
-    const find = bar.createDiv({ cls: "lib-bar-field" });
+    const find = row.createDiv({ cls: "lib-bar-field" });
     setIcon(find.createSpan({ cls: "lib-bar-icon" }), "search");
     const q = find.createEl("input", {
       cls: "lib-bar-input",
@@ -913,8 +914,7 @@ class BarChild extends MarkdownRenderChild {
       }
     });
 
-    const right = bar.createDiv({ cls: "lib-bar-right" });
-    const add = right.createDiv({ cls: "lib-bar-field mod-add" });
+    const add = row.createDiv({ cls: "lib-bar-field mod-add" });
     setIcon(add.createSpan({ cls: "lib-bar-icon" }), "plus");
     const t = add.createEl("input", {
       cls: "lib-bar-input",
@@ -945,7 +945,7 @@ class BarChild extends MarkdownRenderChild {
     });
     add.createEl("button", { cls: "lib-bar-btn", text: "Add" }).addEventListener("click", go);
 
-    const imp = right.createEl("button", {
+    const imp = bar.createEl("button", {
       cls: "lib-bar-import clickable-icon",
       attr: { "aria-label": "Import from Goodreads, StoryGraph or Letterboxd" },
     });

@@ -3,7 +3,7 @@
 A shelf of your books and films in Obsidian: one ledger note per library, no file per title unless it earns one.
 
 <p align="center">
-  <img src="./images/libraryhub-1.5.0.png" alt="The library hub: the search and add bar, then the Now and Recently finished shelves" />
+  <img src="./images/libraryhub-desk.png" alt="The library hub: the reading desk with current books and the year goal, the search and add bar, then the Now shelf" />
 </p>
 
 ## Getting started

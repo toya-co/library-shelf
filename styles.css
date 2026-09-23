@@ -554,11 +554,21 @@
 
 /* ---------- the page bar: search + add ---------- */
 
+/* Two rows: search on the left and the add box flush right, then the import button
+   under search. */
 .lib-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px 28px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
   margin: 0.4em 0 1em;
+}
+.lib-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 28px;
+  width: 100%;
 }
 .lib-bar-field {
   flex: 0 1 230px;
@@ -590,15 +600,9 @@
   background: transparent;
   padding: 4px 0;
 }
-/* search on the left; the add box and import button as one group, flush right */
-.lib-bar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
 .lib-bar-field.mod-add {
   flex: 0 1 280px;
+  margin-left: auto;
 }
 .lib-bar-ledger {
   flex: 0 0 auto;
@@ -664,7 +668,6 @@
 
 .lib-bar-import {
   flex: 0 0 auto;
-  align-self: center;
 }
 
 /* ---------- the reading desk ---------- */
