@@ -12,6 +12,26 @@ Click the **library** icon in the ribbon (or run **Open library**). The first cl
 creates `Library/Books.md`, `Library/Movies.md` and a `Library/Library.md` hub, then
 opens the hub. Every click after that just opens it.
 
+## The reading desk
+
+The hub opens with a desk: covers and titles of what you're currently reading, how
+many are active and on the wishlist, your average rating, the last thing you
+finished, and how many you've finished this year. Give it a goal and that count
+becomes a ring.
+
+````markdown
+```library-desk
+goal: 30
+```
+````
+
+| Option | |
+|---|---|
+| `goal` | Draws the year as a ring against it — "11/30" |
+| `from` | Ledgers to read. Default: all of them |
+| `covers` | How many covers to show. Default 3 |
+| `label` | The heading. Default "Currently reading" |
+
 ## Adding
 
 Type a title in the **Add a title…** box at the top of any library page and press

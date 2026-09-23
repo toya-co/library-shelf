@@ -313,6 +313,7 @@ function hubTemplate(ledgers) {
     [
       "---\ntags:\n  - library\n---",
       "# Library",
+      "```library-desk\n```",
       "```library-bar\n```",
       "## Now",
       shelf("where:", "  status: active", "size: 96", "empty: Nothing on the go."),
@@ -791,6 +792,74 @@ class CardChild extends ShelfChild {
   }
 }
 
+/* ---------- the reading desk ---------- */
+
+/* A `library-desk` block: the top of a hub. What you're on right now, a few counts,
+   and the year against a goal — all read from the ledgers, nothing stored of its
+   own. It rides the shelf registry, so a ledger edit repaints it; with no `from`
+   it reads every ledger. */
+class DeskChild extends ShelfChild {
+  async render() {
+    const seq = (this.renderSeq = (this.renderSeq ?? 0) + 1);
+    const opts = this.opts;
+    let entries = [];
+    for (const src of await this.resolveSources()) {
+      entries = entries.concat((await readLedger(this.plugin.app, src)).entries);
+    }
+    if (seq !== this.renderSeq) return;
+    const el = this.containerEl;
+    el.empty();
+    const root = el.createDiv({ cls: "lib-desk" });
+
+    const now = entries.filter((e) => e.status === "active");
+    const covers = root.createDiv({ cls: "lib-desk-covers" });
+    for (const entry of now.slice(0, Number(opts.covers) || 3)) {
+      const art = covers.createDiv({ cls: "lib-art lib-desk-cover" });
+      const blank = () => {
+        art.empty();
+        art.addClass("is-blank");
+        art.createDiv({ cls: "lib-blank-title", text: entry.title ?? "Untitled" });
+      };
+      const urls = coverUrls(entry, this.plugin.settings);
+      if (urls.length) mountCover(art, urls, { alt: entry.title ?? "" }, blank);
+      else blank();
+      art.setAttribute("aria-label", entry.title ?? "Untitled");
+      art.addEventListener("click", (evt) => (entry.note ? this.openNote(entry, evt) : this.entryMenu(entry, evt)));
+      art.addEventListener("contextmenu", (evt) => this.entryMenu(entry, evt));
+    }
+
+    const mid = root.createDiv({ cls: "lib-desk-mid" });
+    mid.createDiv({ cls: "lib-desk-label", text: opts.label ?? "Currently reading" });
+    mid.createDiv({
+      cls: "lib-desk-titles",
+      text: now.length ? now.map((e) => e.title ?? "Untitled").join(", ") : "Nothing right now.",
+    });
+
+    const chips = mid.createDiv({ cls: "lib-desk-chips" });
+    const chip = (text) => chips.createSpan({ cls: "lib-desk-chip", text });
+    const count = (st) => entries.filter((e) => e.status === st).length;
+    chip(now.length + " active");
+    chip(count("wishlist") + " wishlist");
+    const rated = entries.filter((e) => typeof e.rating === "number");
+    if (rated.length) chip((rated.reduce((a, e) => a + e.rating, 0) / rated.length).toFixed(1) + " avg");
+    let last = null;
+    for (const e of entries) {
+      for (const d of finishedDates(e)) if (!last || d > last.d) last = { d, e };
+    }
+    if (last) chip("last finished: " + (last.e.title ?? "Untitled"));
+
+    /* The year against a goal: a ring when there's a `goal`, the bare count when not. */
+    const year = new Date().getFullYear();
+    const done = applyOptions(entries, { year: "current" }).length;
+    const goal = Number(opts.goal) > 0 ? Number(opts.goal) : 0;
+    const side = root.createDiv({ cls: "lib-desk-year" });
+    const ring = side.createDiv({ cls: "lib-desk-ring" + (goal ? "" : " is-bare") });
+    ring.style.setProperty("--lib-progress", String(goal ? Math.min(100, Math.round((done / goal) * 100)) : 0));
+    ring.createSpan({ cls: "lib-desk-ring-n", text: goal ? done + "/" + goal : String(done) });
+    side.createDiv({ cls: "lib-desk-ring-label", text: goal ? year + " goal" : "finished in " + year });
+  }
+}
+
 /* ---------- the page bar ---------- */
 
 /* A `library-bar` block: a search box and an add box at the top of a library page.
@@ -844,7 +913,8 @@ class BarChild extends MarkdownRenderChild {
       }
     });
 
-    const add = bar.createDiv({ cls: "lib-bar-field mod-add" });
+    const right = bar.createDiv({ cls: "lib-bar-right" });
+    const add = right.createDiv({ cls: "lib-bar-field mod-add" });
     setIcon(add.createSpan({ cls: "lib-bar-icon" }), "plus");
     const t = add.createEl("input", {
       cls: "lib-bar-input",
@@ -875,7 +945,7 @@ class BarChild extends MarkdownRenderChild {
     });
     add.createEl("button", { cls: "lib-bar-btn", text: "Add" }).addEventListener("click", go);
 
-    const imp = bar.createEl("button", {
+    const imp = right.createEl("button", {
       cls: "lib-bar-import clickable-icon",
       attr: { "aria-label": "Import from Goodreads, StoryGraph or Letterboxd" },
     });
@@ -1744,6 +1814,17 @@ const LibraryShelfPlugin = (module.exports = class LibraryShelfPlugin extends Pl
     this.addRibbonIcon("library", "Open library", () => this.openLibrary());
     this.addCommand({ id: "open-library", name: "Open library", callback: () => this.openLibrary() });
 
+    this.registerMarkdownCodeBlockProcessor("library-desk", (source, el, ctx) => {
+      let opts = {};
+      try {
+        opts = parseYaml(source) || {};
+      } catch (e) {
+        el.createDiv({ cls: "lib-error", text: "Bad block options: " + e.message });
+        return;
+      }
+      ctx.addChild(new DeskChild(this, el, opts, ctx.sourcePath));
+    });
+
     this.registerMarkdownCodeBlockProcessor("library-bar", (source, el, ctx) => {
       let opts = {};
       try {
@@ -1841,7 +1922,7 @@ const LibraryShelfPlugin = (module.exports = class LibraryShelfPlugin extends Pl
      shelves too (same registry) but aren't searchable — skip them. */
   refreshPage(path) {
     for (const shelf of this.shelves) {
-      if (shelf.sourcePath === path && !(shelf instanceof CardChild)) shelf.render();
+      if (shelf.sourcePath === path && !(shelf instanceof CardChild) && !(shelf instanceof DeskChild)) shelf.render();
     }
   }
 
