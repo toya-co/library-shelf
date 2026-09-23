@@ -12,6 +12,7 @@ const {
   requestUrl,
   debounce,
   setIcon,
+  Menu,
 } = require("obsidian");
 
 const DEFAULT_SETTINGS = {
@@ -26,6 +27,10 @@ const DEFAULT_SETTINGS = {
 
 const DEFAULT_COLUMNS = ["cover", "title", "author", "year", "rating"];
 const STATUSES = ["wishlist", "active", "done", "abandoned", "reference"];
+
+/* Where a drawn entry came from — its ledger and row — so a menu edit can write back
+   to exactly that row. A symbol, so it never leaks into search or a written ledger. */
+const SRC = Symbol("library-source");
 
 /* A ledger keeps its entries in a fenced json or yaml block shaped
    { library: [ ... ] }. Any other fenced block in the note is ignored. */
@@ -67,11 +72,19 @@ async function readLedger(app, ref) {
   const entries = [];
   DATA_FENCE.lastIndex = 0;
   let m;
+  let block = 0;
   while ((m = DATA_FENCE.exec(raw)) !== null) {
     const parsed = parseBlock(m[1] === "json" ? "json" : "yaml", m[2]);
     if (parsed && Array.isArray(parsed.library)) {
-      /* stamp the ledger name so a merged shelf can still group by medium */
-      for (const it of parsed.library) entries.push(Object.assign({ medium }, it));
+      /* stamp the ledger name so a merged shelf can still group by medium. Only the
+         first block's rows get an index: that's the block writeLedger edits, so a
+         row from any later block is found by title instead. */
+      parsed.library.forEach((it, i) => {
+        const e = Object.assign({ medium }, it);
+        e[SRC] = { ledger: path, index: block === 0 ? i : -1 };
+        entries.push(e);
+      });
+      block += 1;
     }
   }
   return { entries, missing: null };
@@ -133,23 +146,59 @@ function todayStamp() {
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 }
 
-/* Explicit cover wins. Otherwise derive one from an identifier — Open Library's
-   coverage is patchy, so a miss falls through to the titled card. */
-function coverUrl(entry, settings) {
-  if (entry.cover) return entry.cover;
-  if (!settings.deriveCovers) return null;
-  if (entry.isbn) {
-    return (
-      "https://covers.openlibrary.org/b/isbn/" +
-      String(entry.isbn).replace(/[- ]/g, "") +
-      "-L.jpg?default=false"
-    );
-  }
-  if (entry.asin) {
-    return "https://images-na.ssl-images-amazon.com/images/P/" + entry.asin + ".01.LZZZZZZZ.jpg";
-  }
-  return null;
+const amazonCover = (id) => "https://images-na.ssl-images-amazon.com/images/P/" + id + ".01.LZZZZZZZ.jpg";
+
+/* For print books Amazon's ASIN *is* the ISBN-10, so an ISBN gives a second cover
+   source for free. A 978- ISBN-13 converts; a 979- one has no ISBN-10 and doesn't. */
+function isbn10(isbn) {
+  const d = String(isbn ?? "").replace(/[^0-9Xx]/g, "").toUpperCase();
+  if (d.length === 10) return d;
+  if (d.length !== 13 || !d.startsWith("978")) return null;
+  const core = d.slice(3, 12);
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += (10 - i) * Number(core[i]);
+  const check = (11 - (sum % 11)) % 11;
+  return core + (check === 10 ? "X" : String(check));
 }
+
+/* Every source worth trying, best first. Explicit cover wins outright. An ISBN tries
+   Open Library, then Amazon by ISBN-10 — Open Library misses a lot of manga and older
+   printings that Amazon has. Empty means go straight to the titled card. */
+function coverUrls(entry, settings) {
+  if (entry.cover) return [entry.cover];
+  if (!settings.deriveCovers) return [];
+  const urls = [];
+  if (entry.isbn) {
+    urls.push(
+      "https://covers.openlibrary.org/b/isbn/" + String(entry.isbn).replace(/[- ]/g, "") + "-L.jpg?default=false"
+    );
+    const ten = isbn10(entry.isbn);
+    if (ten) urls.push(amazonCover(ten));
+  }
+  if (entry.asin) urls.push(amazonCover(entry.asin));
+  return urls;
+}
+
+/* One <img> walking the source list: each miss (a 404, or Amazon's 1x1 gif) swaps
+   in the next URL on the same element — its listeners stay attached and judge the
+   next source too — and only running out calls onMiss. */
+function mountCover(parent, urls, attrs, onMiss) {
+  let i = 0;
+  const img = parent.createEl("img", {
+    cls: attrs.cls,
+    attr: { src: urls[0], loading: "lazy", alt: attrs.alt ?? "" },
+  });
+  watchCover(img, () => {
+    i += 1;
+    if (i < urls.length) img.src = urls[i];
+    else onMiss();
+  });
+  return img;
+}
+
+/* YAML can hand a date back as a string or, under some parsers, a Date. */
+const dateStr = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
+const finishedDates = (entry) => [].concat(entry.finished ?? []).filter((v) => v != null).map(dateStr);
 
 /* Amazon answers an unknown ASIN with a 200 and a 1x1 transparent gif rather
    than a 404, so a load event is not proof of a cover. Anything this small is a
@@ -157,7 +206,12 @@ function coverUrl(entry, settings) {
 const MIN_COVER_PX = 10;
 
 function watchCover(img, onMiss) {
+  let judged = "";
   const check = () => {
+    /* A cached image can report complete at attach time *and* fire load — judge
+       each source once, or a miss would skip two fallbacks at a time. */
+    if (judged === img.src) return;
+    judged = img.src;
     if (img.naturalWidth < MIN_COVER_PX || img.naturalHeight < MIN_COVER_PX) onMiss();
   };
   img.addEventListener("error", onMiss);
@@ -190,6 +244,12 @@ function sortKey(entry, field) {
 
 function applyOptions(entries, opts) {
   let out = entries;
+  /* `year: 2026` keeps what was finished in that year — a reread that year counts
+     once, since it's one row. `year: current` follows the calendar. */
+  if (opts.year != null && opts.year !== "") {
+    const y = String(opts.year).toLowerCase() === "current" ? String(new Date().getFullYear()) : String(opts.year);
+    out = out.filter((it) => finishedDates(it).some((d) => d.startsWith(y)));
+  }
   if (opts.where && typeof opts.where === "object") {
     out = out.filter((it) =>
       Object.entries(opts.where).every(([k, v]) =>
@@ -208,6 +268,64 @@ function applyOptions(entries, opts) {
   });
   if (opts.limit) out = out.slice(0, Number(opts.limit));
   return out;
+}
+
+/* Search on a library page: every word has to appear somewhere in what the card
+   shows, so "le guin earthsea" narrows the way a person expects. Finished dates are
+   in the haystack too — "2024" usually means read in 2024, not published then. */
+function matchesQuery(entry, query) {
+  const words = String(query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = [entry.title, entry.author, entry.director, entry.shelf, entry.year, entry.status, entry.medium]
+    .concat(finishedDates(entry))
+    .filter((v) => v != null)
+    .join(" ")
+    .toLowerCase();
+  return words.every((w) => hay.includes(w));
+}
+
+const ledgerName = (path) => String(path).replace(/\.md$/, "").split("/").pop();
+
+/* What the ribbon icon writes on first use. Kept as functions of the found ledgers
+   rather than fixed text, so a vault that set a different ledger folder gets a hub
+   pointing at the right paths. Paths are quoted: a folder name with a comma or a
+   colon is still valid YAML that way. */
+const HUB_NAME = "Library.md";
+
+function ledgerTemplate(total) {
+  const thing = total === "movies" ? "film" : "book";
+  return [
+    "---", "tags:", "  - library", "---", "",
+    "```library-bar", "```", "",
+    "```library-shelf", "group: shelf", "total: " + total, "stats: true",
+    "empty: Nothing here yet. Add one with the box above.", "```", "",
+    "## Ledger", "",
+    "Each " + thing + " is a row in the block below. The add box writes here for you;",
+    "editing by hand works too.", "",
+    "```yaml", "library: []", "```", "",
+  ].join("\n");
+}
+
+function hubTemplate(ledgers) {
+  const from = "from: [" + ledgers.map((l) => JSON.stringify(String(l).replace(/\.md$/, ""))).join(", ") + "]";
+  const shelf = (...lines) => ["```library-shelf", from, ...lines, "```"].join("\n");
+  return (
+    [
+      "---\ntags:\n  - library\n---",
+      "# Library",
+      "```library-bar\n```",
+      "## Now",
+      shelf("where:", "  status: active", "size: 96", "empty: Nothing on the go."),
+      "## Recently finished",
+      shelf("where:", "  status: done", "sort: -finished", "limit: 12", "size: 96", "empty: Nothing finished yet."),
+      "## This year",
+      shelf("year: current", "sort: -finished", "total: finished this year", "size: 88", "empty: Nothing finished this year yet."),
+      "## Everything",
+      shelf("group: medium", "size: 88", "empty: Nothing here yet. Add one with the box above."),
+      "## Wishlist",
+      shelf("where:", "  status: wishlist", "size: 88", "empty: The wishlist is empty."),
+    ].join("\n\n") + "\n"
+  );
 }
 
 class ShelfChild extends MarkdownRenderChild {
@@ -254,7 +372,58 @@ class ShelfChild extends MarkdownRenderChild {
     this.plugin.app.workspace.openLinkText(entry.note, this.sourcePath, Keymap.isModEvent(evt));
   }
 
+  /* Right-click (long-press on mobile) on a cover or table row: the edits you'd
+     otherwise make by hand in the ledger. Every item writes the one row it came
+     from; the modify event then repaints every shelf that reads that ledger. */
+  entryMenu(entry, evt) {
+    const src = entry[SRC];
+    if (!src) return;
+    evt.preventDefault();
+    const edit = (fn) => this.plugin.editEntry(src, entry, fn);
+    const menu = new Menu();
+    for (const st of STATUSES) {
+      menu.addItem((i) =>
+        i
+          .setTitle(st[0].toUpperCase() + st.slice(1))
+          .setChecked(entry.status === st)
+          .onClick(() => edit((e) => (e.status = st)))
+      );
+    }
+    menu.addSeparator();
+    menu.addItem((i) =>
+      i.setTitle("Finished again today").setIcon("check").onClick(() => edit((e) => addFinishedDate(e, todayStamp())))
+    );
+    menu.addItem((i) => i.setTitle("Rate…").setIcon("star").onClick(() => new RatingModal(this.plugin, src, entry).open()));
+    menu.addSeparator();
+    if (entry.note) {
+      menu.addItem((i) =>
+        i.setTitle("Open note").setIcon("notebook-pen").onClick(() =>
+          this.plugin.app.workspace.openLinkText(entry.note, this.sourcePath, false)
+        )
+      );
+    } else {
+      menu.addItem((i) =>
+        i.setTitle("Create note").setIcon("file-plus").onClick(() => promoteEntry(this.plugin, src.ledger, entry))
+      );
+    }
+    menu.addItem((i) =>
+      i.setTitle("Remove from library").setIcon("trash").onClick(() =>
+        new ConfirmModal(
+          this.plugin.app,
+          "Remove “" + (entry.title ?? "Untitled") + "” from " + ledgerName(src.ledger) + "?",
+          "Remove",
+          () => edit(null)
+        ).open()
+      )
+    );
+    menu.showAtMouseEvent(evt);
+  }
+
   async render() {
+    /* Search re-renders on every pause in typing, and each render awaits the
+       ledger reads — so an older render can finish after a newer one. Only the
+       latest may draw. */
+    const seq = (this.renderSeq = (this.renderSeq ?? 0) + 1);
     const el = this.containerEl;
     el.empty();
     const settings = this.plugin.settings;
@@ -267,6 +436,8 @@ class ShelfChild extends MarkdownRenderChild {
       if (res.missing) missing.push(res.missing);
       entries = entries.concat(res.entries);
     }
+    if (seq !== this.renderSeq) return;
+    el.empty();
 
     const root = el.createDiv({ cls: "lib-shelf" });
 
@@ -309,12 +480,18 @@ class ShelfChild extends MarkdownRenderChild {
        shelf to nothing with no cell left to click back out of. Drop it instead. */
     if (this.facet && !matched.some((it) => it.status === this.facet)) this.facet = null;
 
-    const shown = this.facet ? matched.filter((it) => it.status === this.facet) : matched;
+    /* The page's search box narrows like a facet does: the count follows it, the
+       stat row doesn't, so the navigation stays put while you type. */
+    const query = this.plugin.searches.get(this.sourcePath) ?? "";
+    const found = query ? matched.filter((it) => matchesQuery(it, query)) : matched;
+    const shown = this.facet ? found.filter((it) => it.status === this.facet) : found;
     const items = opts.limit ? shown.slice(0, Number(opts.limit)) : shown;
 
     if (opts.total) {
       const total = root.createDiv({ cls: "lib-total" });
       total.createSpan({ cls: "lib-total-count", text: String(shown.length) });
+      /* `goal: 24` prints the count against it — "14 / 24". */
+      if (Number(opts.goal) > 0) total.createSpan({ cls: "lib-total-goal", text: "/ " + Number(opts.goal) });
       total.createSpan({
         cls: "lib-total-label",
         text: typeof opts.total === "string" ? opts.total : shown.length === 1 ? "entry" : "entries",
@@ -367,7 +544,11 @@ class ShelfChild extends MarkdownRenderChild {
     if (!items.length) {
       root.createDiv({
         cls: "lib-empty",
-        text: this.facet ? "Nothing " + this.facet + " on this shelf." : opts.empty ?? "Nothing on this shelf yet.",
+        text: query
+          ? "No matches for “" + query + "”."
+          : this.facet
+          ? "Nothing " + this.facet + " on this shelf."
+          : opts.empty ?? "Nothing on this shelf yet.",
       });
       return;
     }
@@ -452,11 +633,10 @@ class ShelfChild extends MarkdownRenderChild {
     const { entry, ledger } = hit;
     const by = creatorOf(entry);
 
-    const url = coverUrl(entry, this.plugin.settings);
+    const urls = coverUrls(entry, this.plugin.settings);
     const art = root.createDiv({ cls: "lib-card-art" });
-    if (url) {
-      const img = art.createEl("img", { attr: { src: url, alt: entry.title ?? "" } });
-      watchCover(img, () => {
+    if (urls.length) {
+      mountCover(art, urls, { alt: entry.title ?? "" }, () => {
         art.empty();
         art.addClass("is-blank");
       });
@@ -518,20 +698,19 @@ class ShelfChild extends MarkdownRenderChild {
       if (by) art.createDiv({ cls: "lib-blank-by", text: by });
     };
 
-    const url = coverUrl(entry, this.plugin.settings);
-    if (url) {
-      const img = art.createEl("img", {
-        attr: { src: url, loading: "lazy", alt: entry.title ?? "" },
-      });
-      watchCover(img, blank);
-    } else {
-      blank();
-    }
+    const urls = coverUrls(entry, this.plugin.settings);
+    if (urls.length) mountCover(art, urls, { alt: entry.title ?? "" }, blank);
+    else blank();
 
     if (entry.rating != null) art.createDiv({ cls: "lib-rating", text: String(entry.rating) });
+    card.addEventListener("contextmenu", (evt) => this.entryMenu(entry, evt));
     if (entry.note) {
       art.addClass("is-linked");
       art.addEventListener("click", (evt) => this.openNote(entry, evt));
+    } else {
+      /* A note-less cover used to do nothing on click; now it opens the menu. */
+      art.addClass("is-menu");
+      art.addEventListener("click", (evt) => this.entryMenu(entry, evt));
     }
 
     const meta = card.createDiv({ cls: "lib-meta" });
@@ -565,6 +744,7 @@ class ShelfChild extends MarkdownRenderChild {
     for (const entry of items) {
       const row = body.createEl("tr");
       if (entry.status) row.dataset.status = entry.status;
+      row.addEventListener("contextmenu", (evt) => this.entryMenu(entry, evt));
       for (const c of cols) this.cell(row, entry, c);
     }
   }
@@ -572,13 +752,9 @@ class ShelfChild extends MarkdownRenderChild {
   cell(row, entry, col) {
     const td = row.createEl("td", { cls: "lib-td-" + col });
     if (col === "cover") {
-      const url = coverUrl(entry, this.plugin.settings);
-      if (url) {
-        const img = td.createEl("img", {
-          cls: "lib-thumb",
-          attr: { src: url, loading: "lazy", alt: "" },
-        });
-        watchCover(img, () => img.remove());
+      const urls = coverUrls(entry, this.plugin.settings);
+      if (urls.length) {
+        const img = mountCover(td, urls, { cls: "lib-thumb" }, () => img.remove());
       }
       return;
     }
@@ -615,6 +791,106 @@ class CardChild extends ShelfChild {
   }
 }
 
+/* ---------- the page bar ---------- */
+
+/* A `library-bar` block: a search box and an add box at the top of a library page.
+   Search is page-local — it narrows every shelf rendered from the same note and
+   nothing else — and lives in memory, not settings, for the same reason a facet
+   does: it's something you typed a moment ago, not a preference. */
+class BarChild extends MarkdownRenderChild {
+  constructor(plugin, el, opts, sourcePath) {
+    super(el);
+    this.plugin = plugin;
+    this.opts = opts ?? {};
+    this.sourcePath = sourcePath;
+  }
+
+  onload() {
+    this.render();
+  }
+
+  onunload() {
+    if (this.plugin.searches.delete(this.sourcePath)) this.plugin.refreshPage(this.sourcePath);
+  }
+
+  async render() {
+    const el = this.containerEl;
+    el.empty();
+    const bar = el.createDiv({ cls: "lib-bar" });
+
+    const find = bar.createDiv({ cls: "lib-bar-field" });
+    setIcon(find.createSpan({ cls: "lib-bar-icon" }), "search");
+    const q = find.createEl("input", {
+      cls: "lib-bar-input",
+      attr: { type: "search", placeholder: "Search this page", "aria-label": "Search this page" },
+    });
+    q.value = this.plugin.searches.get(this.sourcePath) ?? "";
+    const apply = debounce(
+      () => {
+        const v = q.value.trim();
+        if (v) this.plugin.searches.set(this.sourcePath, v);
+        else this.plugin.searches.delete(this.sourcePath);
+        this.plugin.refreshPage(this.sourcePath);
+      },
+      150,
+      true
+    );
+    q.addEventListener("input", apply);
+    q.addEventListener("keydown", (evt) => {
+      if (evt.key === "Escape" && q.value) {
+        evt.stopPropagation();
+        q.value = "";
+        apply();
+      }
+    });
+
+    const add = bar.createDiv({ cls: "lib-bar-field mod-add" });
+    setIcon(add.createSpan({ cls: "lib-bar-icon" }), "plus");
+    const t = add.createEl("input", {
+      cls: "lib-bar-input",
+      attr: { type: "text", placeholder: "Add a title…", "aria-label": "Add a title" },
+    });
+
+    /* Where the add box writes: a ledger page adds to itself; a hub offers every
+       ledger, defaulting to the first. `ledger:` in the block overrides both. */
+    const ledgers = await this.plugin.findLedgers();
+    const own = toPath(this.sourcePath);
+    let target = this.opts.ledger ? toPath(this.opts.ledger) : ledgers.includes(own) ? own : ledgers[0];
+    if (!this.opts.ledger && !ledgers.includes(own) && ledgers.length > 1) {
+      const sel = add.createEl("select", { cls: "dropdown lib-bar-ledger", attr: { "aria-label": "Add to" } });
+      for (const l of ledgers) sel.createEl("option", { text: ledgerName(l), attr: { value: l } });
+      sel.value = target;
+      sel.addEventListener("change", () => (target = sel.value));
+    }
+
+    const go = () => {
+      new AddEntryModal(this.plugin, { query: t.value.trim(), ledger: target }).open();
+      t.value = "";
+    };
+    t.addEventListener("keydown", (evt) => {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        go();
+      }
+    });
+    add.createEl("button", { cls: "lib-bar-btn", text: "Add" }).addEventListener("click", go);
+
+    const imp = bar.createEl("button", {
+      cls: "lib-bar-import clickable-icon",
+      attr: { "aria-label": "Import from Goodreads, StoryGraph or Letterboxd" },
+    });
+    setIcon(imp, "import");
+    imp.addEventListener("click", () => new ImportModal(this.plugin, { ledger: this.opts.ledger || (ledgers.includes(own) ? own : "") }).open());
+
+    if (!ledgers.length) {
+      el.createDiv({
+        cls: "lib-error",
+        text: "No ledger yet — click the library icon in the ribbon to set one up.",
+      });
+    }
+  }
+}
+
 /* ---------- lookup ---------- */
 
 async function searchOpenLibrary(query) {
@@ -647,14 +923,313 @@ async function searchTmdb(query, apiKey) {
   }));
 }
 
-class AddEntryModal extends Modal {
-  constructor(plugin) {
+/* ---------- import ---------- */
+
+/* RFC 4180-ish: quoted fields may hold commas, doubled quotes and newlines — a
+   Goodreads review column has all three. A leading BOM is dropped. */
+function parseCsv(text) {
+  const src = String(text).replace(/^\uFEFF/, "");
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"') {
+        if (src[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else quoted = false;
+      } else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && src[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else field += c;
+  }
+  if (field !== "" || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  const [head = [], ...body] = rows.filter((r) => r.some((v) => v.trim() !== ""));
+  return body.map((r) => Object.fromEntries(head.map((h, i) => [h.trim(), (r[i] ?? "").trim()])));
+}
+
+/* Goodreads wraps ISBNs as ="0141439475" so spreadsheets keep the leading zero. */
+const unexcel = (v) => String(v ?? "").replace(/^="?/, "").replace(/"$/, "").trim();
+const slashDate = (v) => {
+  const m = String(v ?? "").match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+  return m ? m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0") : null;
+};
+const num = (v) => {
+  const n = Number(String(v ?? "").trim());
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+};
+const cleanIsbn = (v) => {
+  const d = unexcel(v).replace(/[- ]/g, "");
+  return /^(\d{9}[\dXx]|\d{13})$/.test(d) ? d : undefined;
+};
+const tidy = (e) => Object.fromEntries(Object.entries(e).filter(([, v]) => v != null && v !== "" && !(Array.isArray(v) && !v.length)));
+
+const GOODREADS_STATUS = { read: "done", "currently-reading": "active", "to-read": "wishlist" };
+function fromGoodreads(rows) {
+  return rows.map((r) => {
+    const shelf = String(r["Exclusive Shelf"] || "").toLowerCase();
+    const status = GOODREADS_STATUS[shelf] || (/dnf|did-not-finish|abandon/.test(shelf) ? "abandoned" : "wishlist");
+    /* first custom shelf that isn't one of the three built-in ones */
+    const custom = String(r["Bookshelves"] || "")
+      .split(",")
+      .map((x) => x.trim())
+      .find((x) => x && !GOODREADS_STATUS[x] && x !== shelf);
+    const read = slashDate(r["Date Read"]);
+    return tidy({
+      title: r["Title"],
+      author: r["Author"],
+      year: num(r["Original Publication Year"]) || num(r["Year Published"]),
+      shelf: custom,
+      status,
+      rating: num(r["My Rating"]),
+      finished: status === "done" && read ? [read] : undefined,
+      isbn: cleanIsbn(r["ISBN13"]) || cleanIsbn(r["ISBN"]),
+    });
+  });
+}
+
+const STORYGRAPH_STATUS = {
+  read: "done",
+  "currently-reading": "active",
+  "to-read": "wishlist",
+  "did-not-finish": "abandoned",
+  paused: "active",
+};
+function fromStoryGraph(rows) {
+  return rows.map((r) => {
+    const status = STORYGRAPH_STATUS[String(r["Read Status"] || "").toLowerCase()] || "wishlist";
+    /* "Dates Read" holds each read as start-end; the end of each is a finish. */
+    let finished = String(r["Dates Read"] || "")
+      .split(",")
+      .map((x) => slashDate(x.split("-").pop()))
+      .filter(Boolean);
+    if (!finished.length && slashDate(r["Last Date Read"])) finished = [slashDate(r["Last Date Read"])];
+    return tidy({
+      title: r["Title"],
+      author: r["Authors"],
+      status,
+      rating: num(r["Star Rating"]),
+      finished: status === "done" ? [...new Set(finished)].sort() : undefined,
+      isbn: cleanIsbn(r["ISBN/UID"]),
+    });
+  });
+}
+
+/* Letterboxd exports a zip of CSVs; the useful four are merged by title + year.
+   watched/diary/ratings mean seen, watchlist means wishlist, the diary's dates are
+   the viewings, and a rating anywhere wins over none. */
+function fromLetterboxd(files) {
+  const films = new Map();
+  const get = (r) => {
+    const key = titleKey(r["Name"]) + "|" + (r["Year"] || "");
+    if (!films.has(key)) films.set(key, { title: r["Name"], year: num(r["Year"]), status: "wishlist", finished: [] });
+    return films.get(key);
+  };
+  const order = { watchlist: 0, watched: 1, ratings: 2, diary: 3 };
+  for (const f of [...files].sort((a, b) => order[a.kind] - order[b.kind])) {
+    for (const r of f.rows) {
+      if (!r["Name"]) continue;
+      const e = get(r);
+      if (f.kind !== "watchlist") e.status = "done";
+      if (num(r["Rating"])) e.rating = num(r["Rating"]);
+      const seen = slashDate(r["Watched Date"]);
+      if (f.kind === "diary" && seen) e.finished.push(seen);
+    }
+  }
+  return [...films.values()].map((e) => tidy(Object.assign(e, { finished: [...new Set(e.finished)].sort() })));
+}
+
+/* Tell a file's source from its header row; Letterboxd's watched and watchlist
+   files share one header, so their names split them. */
+function detectExport(name, rows) {
+  const head = new Set(Object.keys(rows[0] || {}));
+  if (head.has("Exclusive Shelf") && head.has("My Rating")) return { service: "Goodreads", medium: "books" };
+  if (head.has("Read Status") && head.has("Star Rating")) return { service: "StoryGraph", medium: "books" };
+  if (head.has("Letterboxd URI")) {
+    const kind = head.has("Watched Date")
+      ? "diary"
+      : head.has("Rating")
+      ? "ratings"
+      : /watchlist/i.test(name)
+      ? "watchlist"
+      : "watched";
+    return { service: "Letterboxd", medium: "films", kind };
+  }
+  return null;
+}
+
+/* The ledger's own dedupe key: a title, plus the year for films so a remake is its
+   own row. Existing rows and the incoming batch are both checked. */
+function mergeImport(existing, incoming, medium) {
+  const key = (e) => titleKey(e.title) + (medium === "films" && e.year ? "|" + e.year : "");
+  const loose = (e) => titleKey(e.title);
+  const have = new Set(existing.map(key));
+  const haveLoose = new Set(existing.filter((e) => !e.year).map(loose));
+  const added = [];
+  let skipped = 0;
+  for (const e of incoming) {
+    if (!e.title) continue;
+    if (have.has(key(e)) || haveLoose.has(loose(e))) {
+      skipped++;
+      continue;
+    }
+    have.add(key(e));
+    added.push(e);
+  }
+  return { added, skipped };
+}
+
+function convertExports(files) {
+  const lb = files.filter((f) => f.found.service === "Letterboxd");
+  const out = [];
+  for (const f of files) {
+    if (f.found.service === "Goodreads") out.push(...fromGoodreads(f.rows));
+    if (f.found.service === "StoryGraph") out.push(...fromStoryGraph(f.rows));
+  }
+  if (lb.length) out.push(...fromLetterboxd(lb.map((f) => ({ kind: f.found.kind, rows: f.rows }))));
+  return out;
+}
+
+class ImportModal extends Modal {
+  constructor(plugin, preset = {}) {
     super(plugin.app);
     this.plugin = plugin;
-    this.query = "";
+    this.presetLedger = preset.ledger ? toPath(preset.ledger) : "";
+    this.files = [];
+  }
+
+  async onOpen() {
+    this.titleEl.setText("Import a library");
+    const { contentEl } = this;
+    contentEl.addClass("lib-add-modal");
+
+    const help = contentEl.createDiv({ cls: "lib-import-help" });
+    help.createDiv({ text: "Pick the CSV your service exports:" });
+    const ul = help.createEl("ul");
+    ul.createEl("li", { text: "Goodreads — My Books → Import and export → Export library" });
+    ul.createEl("li", { text: "StoryGraph — Manage account → Export StoryGraph library" });
+    ul.createEl("li", {
+      text: "Letterboxd — Settings → Data → Export your data; unzip, then pick watched, diary, ratings and watchlist .csv together",
+    });
+
+    this.ledgers = await this.plugin.findLedgers();
+    if (!this.ledgers.length) {
+      contentEl.createDiv({ cls: "lib-error", text: "No ledger yet — click the library icon in the ribbon to set one up." });
+      return;
+    }
+    this.ledger = this.ledgers.includes(this.presetLedger) ? this.presetLedger : this.ledgers[0];
+
+    const input = contentEl.createEl("input", { attr: { type: "file", accept: ".csv,text/csv", multiple: "" } });
+    input.addEventListener("change", async () => {
+      this.files = [];
+      for (const file of Array.from(input.files || [])) {
+        this.files.push({ name: file.name, text: await file.text() });
+      }
+      this.preview();
+    });
+
+    new Setting(contentEl).setName("Import into").addDropdown((d) => {
+      for (const l of this.ledgers) d.addOption(l, ledgerName(l));
+      this.ledgerDropdown = d;
+      d.setValue(this.ledger).onChange((v) => {
+        this.ledger = v;
+        this.userPicked = true;
+        this.preview();
+      });
+    });
+
+    this.resultsEl = contentEl.createDiv({ cls: "lib-results" });
+  }
+
+  /* Read the picked files, work out what they are, and show what an import would
+     do before doing it. */
+  async preview() {
+    this.resultsEl.empty();
+    this.plan = null;
+    if (!this.files.length) return;
+
+    const parsed = [];
+    for (const f of this.files) {
+      const rows = parseCsv(f.text);
+      const found = detectExport(f.name, rows);
+      if (!found) {
+        this.resultsEl.createDiv({ cls: "lib-error", text: f.name + " isn't a Goodreads, StoryGraph or Letterboxd export." });
+        continue;
+      }
+      parsed.push({ name: f.name, rows, found });
+    }
+    if (!parsed.length) return;
+
+    /* Point the ledger at the right medium the first time a file tells us which. */
+    const medium = parsed[0].found.medium;
+    if (!this.userPicked && !this.presetLedger) {
+      const guess = this.ledgers.find((l) => (medium === "films" ? /film|movie|watch|cinema/i : /book|read/i).test(l));
+      if (guess && guess !== this.ledger) {
+        this.ledger = guess;
+        this.ledgerDropdown.setValue(guess);
+      }
+    }
+
+    const incoming = convertExports(parsed);
+    const existing = (await readLedger(this.plugin.app, this.ledger)).entries;
+    const { added, skipped } = mergeImport(existing, incoming, medium);
+    this.plan = added;
+
+    const services = [...new Set(parsed.map((p) => p.found.service))].join(" + ");
+    this.resultsEl.createDiv({
+      cls: "lib-results-note",
+      text:
+        services + ": " + incoming.length + " " + (medium === "films" ? "films" : "books") + " — " +
+        added.length + " new, " + skipped + " already in " + ledgerName(this.ledger) + ".",
+    });
+    if (!added.length) return;
+    const b = this.resultsEl.createEl("button", { cls: "mod-cta", text: "Import " + added.length });
+    b.addEventListener("click", () => this.run());
+  }
+
+  async run() {
+    if (!this.plan || !this.plan.length) return;
+    try {
+      await writeLedger(this.plugin.app, this.ledger, (lib) => lib.push(...this.plan));
+      new Notice("Imported " + this.plan.length + " into " + ledgerName(this.ledger));
+      this.close();
+    } catch (e) {
+      new Notice("Couldn't import: " + e.message);
+    }
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+class AddEntryModal extends Modal {
+  /* `preset` comes from a page's add box: the title typed there and the ledger that
+     page writes to. With a title, the lookup runs as the dialog opens. */
+  constructor(plugin, preset = {}) {
+    super(plugin.app);
+    this.plugin = plugin;
+    this.query = preset.query ?? "";
+    this.presetLedger = preset.ledger ? toPath(preset.ledger) : "";
     this.source = "books";
     this.ledger = "";
     this.status = "wishlist";
+    this.results = null;
+    this.resultsFor = "";
   }
 
   async onOpen() {
@@ -673,7 +1248,7 @@ class AddEntryModal extends Modal {
       });
       return;
     }
-    this.ledger = ledgers[0];
+    this.ledger = ledgers.includes(this.presetLedger) ? this.presetLedger : ledgers[0];
     this.source = this.guessSource(this.ledger);
 
     new Setting(contentEl).setName("Ledger").addDropdown((d) => {
@@ -701,10 +1276,16 @@ class AddEntryModal extends Modal {
     const search = new Setting(contentEl).setName("Title");
     search.addText((t) => {
       t.setPlaceholder("Search, or type a title to add as-is");
+      t.setValue(this.query);
       t.onChange((v) => (this.query = v));
       t.inputEl.addEventListener("keydown", (evt) => {
-        if (evt.key === "Enter") {
-          evt.preventDefault();
+        if (evt.key !== "Enter") return;
+        evt.preventDefault();
+        /* Enter looks up; Enter again on the same words takes the top result — so
+           adding a book is type, Enter, Enter. */
+        if (this.results && this.results.length && this.resultsFor === this.query.trim()) {
+          this.commit(this.results[0]);
+        } else {
           this.run();
         }
       });
@@ -713,6 +1294,48 @@ class AddEntryModal extends Modal {
     search.addButton((b) => b.setButtonText("Search").setCta().onClick(() => this.run()));
 
     this.resultsEl = contentEl.createDiv({ cls: "lib-results" });
+    if (this.query.trim()) this.run();
+  }
+
+  /* Film lookup needs a free TMDB key. Ask for it here, where the need shows up,
+     rather than sending anyone off to settings halfway through adding a film. The
+     search that follows is the test: a rejected key lands back here. */
+  keyPrompt(message) {
+    const box = this.resultsEl.createDiv({ cls: "lib-key" });
+    box.createDiv({
+      cls: "lib-results-note",
+      text: message ?? "Film lookup uses TMDB, which needs a free API key. Paste it once and it's saved.",
+    });
+    box.createEl("a", {
+      cls: "lib-key-link",
+      text: "Get a free key at themoviedb.org",
+      attr: { href: "https://www.themoviedb.org/settings/api" },
+    });
+    const row = box.createDiv({ cls: "lib-key-row" });
+    const input = row.createEl("input", { attr: { type: "text", placeholder: "TMDB API key (v3)" } });
+    const go = async () => {
+      const key = input.value.trim();
+      if (!key) return;
+      this.plugin.settings.tmdbApiKey = key;
+      await this.plugin.saveSettings();
+      this.run();
+    };
+    row.createEl("button", { cls: "mod-cta", text: "Save and search" }).addEventListener("click", go);
+    input.addEventListener("keydown", (evt) => {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        evt.stopPropagation();
+        go();
+      }
+    });
+    if (this.query.trim()) {
+      const bare = box.createEl("button", {
+        cls: "lib-key-bare",
+        text: "Add “" + this.query.trim() + "” without looking it up",
+      });
+      bare.addEventListener("click", () => this.commit({ title: this.query.trim() }));
+    }
+    window.setTimeout(() => input.focus(), 0);
   }
 
   guessSource(ledgerPath) {
@@ -721,6 +1344,7 @@ class AddEntryModal extends Modal {
 
   async run() {
     if (!this.query.trim()) return;
+    this.results = null;
     this.resultsEl.empty();
 
     if (this.source === "manual") {
@@ -728,10 +1352,7 @@ class AddEntryModal extends Modal {
       return;
     }
     if (this.source === "films" && !this.plugin.settings.tmdbApiKey) {
-      this.resultsEl.createDiv({
-        cls: "lib-error",
-        text: "Film lookup needs a TMDB API key in Library Shelf settings. Switch to “Don't look up” to add it by hand.",
-      });
+      this.keyPrompt();
       return;
     }
 
@@ -744,6 +1365,11 @@ class AddEntryModal extends Modal {
           : await searchOpenLibrary(this.query);
     } catch (e) {
       this.resultsEl.empty();
+      /* A bad key is the likely failure on the film path — ask again in place. */
+      if (this.source === "films" && (e.status === 401 || /401/.test(String(e.message)))) {
+        this.keyPrompt("TMDB didn't accept that key. Check it and paste it again.");
+        return;
+      }
       this.resultsEl.createDiv({ cls: "lib-error", text: "Lookup failed: " + e.message });
       return;
     }
@@ -758,8 +1384,11 @@ class AddEntryModal extends Modal {
       return;
     }
 
-    for (const r of results) {
-      const row = this.resultsEl.createDiv({ cls: "lib-result" });
+    this.results = results;
+    this.resultsFor = this.query.trim();
+    this.resultsEl.createDiv({ cls: "lib-results-note", text: "Enter adds the first result, or click any." });
+    results.forEach((r, i) => {
+      const row = this.resultsEl.createDiv({ cls: "lib-result" + (i === 0 ? " is-top" : "") });
       if (r.cover) {
         row.createEl("img", { cls: "lib-thumb", attr: { src: r.cover, loading: "lazy", alt: "" } });
       }
@@ -768,7 +1397,7 @@ class AddEntryModal extends Modal {
       const sub = [r.author, r.year].filter(Boolean).join(" · ");
       if (sub) text.createDiv({ cls: "lib-result-sub", text: sub });
       row.addEventListener("click", () => this.commit(r));
-    }
+    });
   }
 
   async commit(result, force) {
@@ -857,7 +1486,94 @@ class AddEntryModal extends Modal {
 
 /* Promotion was a two-step manual job: make the file, then hand-write `note:`
    back onto the row. Both halves fail quietly on their own — a note nothing points
-   at, or a `note:` pointing at a file that doesn't exist — so they're one action. */
+   at, or a `note:` pointing at a file that doesn't exist — so they're one action.
+   Shared by the command and the shelf menu. */
+async function promoteEntry(plugin, ledger, entry) {
+  const app = plugin.app;
+  const folder = (plugin.settings.notesFolder || "Library/notes").replace(/\/$/, "");
+  /* Obsidian forbids these in a filename; a title carrying one would otherwise
+     fail at create() with a message about the path rather than the title. */
+  const safe = String(entry.title ?? "Untitled").replace(/[\\/:*?"<>|#^[\]]/g, "").trim();
+  const notePath = folder + "/" + safe + ".md";
+  try {
+    if (folder && !app.vault.getAbstractFileByPath(folder)) await app.vault.createFolder(folder);
+    if (!app.vault.getAbstractFileByPath(notePath)) await app.vault.create(notePath, "```library-card\n```\n\n");
+    const ref = notePath.replace(/\.md$/, "");
+    await writeLedger(app, ledger, (lib) => {
+      const i = lib.findIndex((e) => titleKey(e.title) === titleKey(entry.title));
+      if (i !== -1) lib[i].note = ref;
+    });
+    new Notice("Created " + ref);
+    const file = app.vault.getAbstractFileByPath(notePath);
+    if (file) await app.workspace.getLeaf(false).openFile(file);
+    return true;
+  } catch (e) {
+    new Notice("Couldn't promote: " + e.message);
+    return false;
+  }
+}
+
+/* A rating is picked, not typed: halves from 0.5 to 5, plus clearing it. */
+class RatingModal extends Modal {
+  constructor(plugin, src, entry) {
+    super(plugin.app);
+    this.plugin = plugin;
+    this.src = src;
+    this.entry = entry;
+  }
+
+  onOpen() {
+    this.titleEl.setText("Rate “" + (this.entry.title ?? "Untitled") + "”");
+    const row = this.contentEl.createDiv({ cls: "lib-rate" });
+    for (let r = 0.5; r <= 5; r += 0.5) {
+      const b = row.createEl("button", { cls: "lib-rate-btn", text: String(r) });
+      if (this.entry.rating === r) b.addClass("mod-cta");
+      b.addEventListener("click", () => this.set(r));
+    }
+    if (this.entry.rating != null) {
+      const clear = this.contentEl.createEl("button", { cls: "lib-rate-clear", text: "Clear rating" });
+      clear.addEventListener("click", () => this.set(null));
+    }
+  }
+
+  async set(r) {
+    await this.plugin.editEntry(this.src, this.entry, (e) => {
+      if (r == null) delete e.rating;
+      else e.rating = r;
+    });
+    this.close();
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/* A yes/no before anything destructive. */
+class ConfirmModal extends Modal {
+  constructor(app, message, action, onYes) {
+    super(app);
+    this.message = message;
+    this.action = action;
+    this.onYes = onYes;
+  }
+
+  onOpen() {
+    this.titleEl.setText(this.message);
+    const row = this.contentEl.createDiv({ cls: "modal-button-container" });
+    const yes = row.createEl("button", { cls: "mod-warning", text: this.action });
+    yes.addEventListener("click", async () => {
+      await this.onYes();
+      this.close();
+    });
+    row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
 class PromoteModal extends Modal {
   constructor(plugin) {
     super(plugin.app);
@@ -927,31 +1643,7 @@ class PromoteModal extends Modal {
   }
 
   async promote(entry) {
-    const folder = (this.plugin.settings.notesFolder || "Library/notes").replace(/\/$/, "");
-    /* Obsidian forbids these in a filename; a title carrying one would otherwise
-       fail at create() with a message about the path rather than the title. */
-    const safe = String(entry.title ?? "Untitled").replace(/[\\/:*?"<>|#^[\]]/g, "").trim();
-    const notePath = folder + "/" + safe + ".md";
-
-    try {
-      if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-        await this.app.vault.createFolder(folder);
-      }
-      if (!this.app.vault.getAbstractFileByPath(notePath)) {
-        await this.app.vault.create(notePath, "```library-card\n```\n\n");
-      }
-      const ref = notePath.replace(/\.md$/, "");
-      await writeLedger(this.app, this.ledger, (lib) => {
-        const i = lib.findIndex((e) => titleKey(e.title) === titleKey(entry.title));
-        if (i !== -1) lib[i].note = ref;
-      });
-      new Notice("Created " + ref);
-      this.close();
-      const file = this.app.vault.getAbstractFileByPath(notePath);
-      if (file) await this.app.workspace.getLeaf(false).openFile(file);
-    } catch (e) {
-      new Notice("Couldn't promote: " + e.message);
-    }
+    if (await promoteEntry(this.plugin, this.ledger, entry)) this.close();
   }
 
   onClose() {
@@ -1043,10 +1735,25 @@ class LibraryShelfSettingTab extends PluginSettingTab {
 
 /* ---------- plugin ---------- */
 
-module.exports = class LibraryShelfPlugin extends Plugin {
+const LibraryShelfPlugin = (module.exports = class LibraryShelfPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
     this.shelves = new Set();
+    this.searches = new Map(); // note path -> what its search box holds
+
+    this.addRibbonIcon("library", "Open library", () => this.openLibrary());
+    this.addCommand({ id: "open-library", name: "Open library", callback: () => this.openLibrary() });
+
+    this.registerMarkdownCodeBlockProcessor("library-bar", (source, el, ctx) => {
+      let opts = {};
+      try {
+        opts = parseYaml(source) || {};
+      } catch (e) {
+        el.createDiv({ cls: "lib-error", text: "Bad block options: " + e.message });
+        return;
+      }
+      ctx.addChild(new BarChild(this, el, opts, ctx.sourcePath));
+    });
 
     this.registerMarkdownCodeBlockProcessor("library-shelf", (source, el, ctx) => {
       let opts = {};
@@ -1088,6 +1795,12 @@ module.exports = class LibraryShelfPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "import-library",
+      name: "Import from Goodreads, StoryGraph or Letterboxd",
+      callback: () => new ImportModal(this).open(),
+    });
+
+    this.addCommand({
       id: "promote-entry",
       name: "Create note for a library entry",
       callback: () => new PromoteModal(this).open(),
@@ -1102,6 +1815,68 @@ module.exports = class LibraryShelfPlugin extends Plugin {
 
   refreshAll() {
     for (const shelf of this.shelves) shelf.render();
+  }
+
+  /* One row, edited in place — `mutate` null removes it. The index says where the row
+     sat when the shelf was drawn; the title check guards against the ledger having
+     changed underneath since, and falls back to finding it by title. */
+  async editEntry(src, entry, mutate) {
+    try {
+      await writeLedger(this.app, src.ledger, (lib) => {
+        let i = src.index;
+        const same = (e) => e && titleKey(e.title) === titleKey(entry.title);
+        if (!(i >= 0 && same(lib[i]))) i = lib.findIndex(same);
+        if (i === -1) throw new Error("“" + entry.title + "” isn't in " + ledgerName(src.ledger) + " any more");
+        if (mutate) mutate(lib[i]);
+        else lib.splice(i, 1);
+      });
+      return true;
+    } catch (e) {
+      new Notice("Couldn't update: " + e.message);
+      return false;
+    }
+  }
+
+  /* Search is scoped to a page, so only that page's shelves repaint. Cards are
+     shelves too (same registry) but aren't searchable — skip them. */
+  refreshPage(path) {
+    for (const shelf of this.shelves) {
+      if (shelf.sourcePath === path && !(shelf instanceof CardChild)) shelf.render();
+    }
+  }
+
+  /* The ribbon icon. First use in a vault with no ledger builds the whole library —
+     Books, Movies, and a hub reading both — so nobody types YAML to get started.
+     Every use after that just opens the hub. */
+  async openLibrary() {
+    const vault = this.app.vault;
+    const folder = (this.settings.ledgerFolder || "").replace(/\/$/, "");
+    const at = (name) => (folder ? folder + "/" : "") + name;
+    const made = [];
+
+    let ledgers = await this.findLedgers();
+    if (!ledgers.length) {
+      if (folder && !vault.getAbstractFileByPath(folder)) await vault.createFolder(folder);
+      for (const [name, total] of [["Books", "books"], ["Movies", "movies"]]) {
+        const path = at(name + ".md");
+        if (vault.getAbstractFileByPath(path)) continue;
+        await vault.create(path, ledgerTemplate(total));
+        made.push(path);
+      }
+      ledgers = await this.findLedgers();
+    }
+    if (!ledgers.length) {
+      new Notice("Couldn't set up a library in " + (folder || "the vault root") + " — a note there is in the way.");
+      return;
+    }
+
+    let hub = vault.getAbstractFileByPath(at(HUB_NAME));
+    if (!hub) {
+      hub = await vault.create(at(HUB_NAME), hubTemplate(ledgers));
+      made.push(at(HUB_NAME));
+    }
+    if (made.length) new Notice("Library set up: " + made.map(ledgerName).join(", "));
+    await this.app.workspace.getLeaf(false).openFile(hub);
   }
 
   /* A ledger is any note in the ledger folder that actually holds a data block. */
@@ -1126,4 +1901,7 @@ module.exports = class LibraryShelfPlugin extends Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
   }
-};
+});
+
+/* Pure helpers, exposed for the headless checks in test/ — not plugin API. */
+LibraryShelfPlugin._internals = { parseCsv, detectExport, convertExports, mergeImport, coverUrls, isbn10, matchesQuery, applyOptions };

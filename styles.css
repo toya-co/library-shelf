@@ -550,3 +550,108 @@
   font-style: italic;
   margin-bottom: 1.2em;
 }
+
+/* ---------- the page bar: search + add ---------- */
+
+.lib-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0.4em 0 1em;
+}
+.lib-bar-field {
+  flex: 1 1 220px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-primary);
+}
+.lib-bar-field:focus-within {
+  border-color: var(--interactive-accent);
+}
+.lib-bar-icon {
+  display: flex;
+  color: var(--text-muted);
+}
+.lib-bar-icon svg {
+  width: 15px;
+  height: 15px;
+}
+.lib-bar .lib-bar-input,
+.lib-bar .lib-bar-input:focus {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 4px 0;
+}
+.lib-bar-ledger {
+  flex: 0 0 auto;
+  font-size: 0.85em;
+}
+.lib-bar-btn {
+  flex: 0 0 auto;
+}
+
+/* The top lookup result is the one Enter takes — mark it. */
+.lib-result.is-top {
+  background: var(--background-modifier-hover);
+}
+
+/* ---------- year goal, shelf menu, rating, TMDB key, import ---------- */
+
+.lib-total-goal {
+  margin-left: 0.3em;
+  color: var(--lib-fg-dim, var(--text-muted));
+}
+
+/* A note-less cover opens the shelf menu on click. */
+.lib-art.is-menu {
+  cursor: pointer;
+}
+
+.lib-rate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 0.8em;
+}
+.lib-rate-btn {
+  min-width: 2.6em;
+}
+
+.lib-key {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  padding: 0.4em 0;
+}
+.lib-key-row {
+  display: flex;
+  gap: 6px;
+}
+.lib-key-row input {
+  flex: 1;
+}
+.lib-key-bare {
+  align-self: flex-start;
+}
+
+.lib-import-help {
+  font-size: 0.88em;
+  color: var(--text-muted);
+  margin-bottom: 0.8em;
+}
+.lib-import-help ul {
+  margin: 0.3em 0 0;
+  padding-left: 1.2em;
+}
+
+.lib-bar-import {
+  flex: 0 0 auto;
+  align-self: center;
+}
